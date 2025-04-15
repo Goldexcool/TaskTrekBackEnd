@@ -14,13 +14,30 @@ dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(cors({
-    origin: ['http://localhost:3000', 'null', 'file://*'],  
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// More flexible CORS configuration
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001').split(',');
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || 
+        origin.match(/\.vercel\.app$/) || 
+        origin.match(/\.netlify\.app$/)) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked request from:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  maxAge: 86400
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
