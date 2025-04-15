@@ -6,8 +6,8 @@ const transporter = nodemailer.createTransport({
   port: 465,
   secure: true, // Use SSL
   auth: {
-    user: process.env.EMAIL_USER || 'ogunseitangold105@gmail.com', // Fallback for testing
-    pass: process.env.EMAIL_PASS || 'ypag qeum xhen hcco' // Fallback for testing
+    user: process.env.EMAIL_USER || '',
+    pass: process.env.EMAIL_PASS || 'y' 
   },
   debug: true
 });
@@ -16,7 +16,7 @@ const transporter = nodemailer.createTransport({
 const testEmailConnection = async () => {
   try {
     console.log('Testing email connection...');
-    console.log(`Using email: ${process.env.EMAIL_USER || 'ogunseitangold105@gmail.com'}`);
+    console.log(`Using email: ${process.env.EMAIL_USER || ''}`);
     
     // Verify connection configuration
     await transporter.verify();
