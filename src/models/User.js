@@ -10,26 +10,26 @@ const UserSchema = new mongoose.Schema(
     },
     username: {
       type: String,
-      required: [true, 'Please add a username'], 
+      required: [true, 'Please provide a username'], 
       unique: true,
       sparse: true, 
       trim: true
     },
     email: { 
       type: String, 
-      required: [true, 'Please add an email'], 
+      required: [true, 'Please provide an email'], 
       unique: true,
       trim: true,
       lowercase: true,
       match: [
         /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-        'Please add a valid email'
+        'Please provide a valid email'
       ]
     },
     password: { 
       type: String, 
-      required: [true, 'Please add a password'],
-      minlength: 6,
+      required: [true, 'Please provide a password'],
+      minlength: 8,
       select: false,
       set: function(password) {
         // Don't transform hashed passwords - only hash plain passwords

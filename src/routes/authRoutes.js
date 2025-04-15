@@ -1,25 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { 
-  signup, 
-  login, 
-  refreshTokenHandler, 
-  logout, 
-  getMe, 
-  forgotPassword, 
-  resetPassword 
-} = require('../controllers/authController');
+const authController = require('../controllers/authController');
 const { authenticateToken } = require('../middleware/authMiddleware');
 
-// Public routes
-router.post('/signup', signup);
-router.post('/login', login);  // Single login route for all users
-router.post('/refresh-token', refreshTokenHandler);
-router.post('/logout', logout);
-router.post('/forgot-password', forgotPassword);
-router.post('/reset-password', resetPassword);
+// Auth routes
+router.post('/signup', authController.signup);
+router.post('/login', authController.login);
+router.post('/refresh-token', authController.refreshToken);
+router.post('/logout', authenticateToken, authController.logout);
 
-// Protected routes
-router.get('/me', authenticateToken, getMe);
+// Password reset routes
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password/:token', authController.resetPassword);
 
 module.exports = router;
