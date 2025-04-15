@@ -1,24 +1,36 @@
 const nodemailer = require('nodemailer');
 
-// Create reusable transporter
+// Create reusable transporter with more explicit configuration
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true, // Use SSL
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    user: process.env.EMAIL_USER || 'ogunseitangold105@gmail.com', // Fallback for testing
+    pass: process.env.EMAIL_PASS || 'ypag qeum xhen hcco' // Fallback for testing
   },
-  debug: true // Enable debugging
+  debug: true
 });
 
-// Test email connection
+// Test email connection with better error handling
 const testEmailConnection = async () => {
   try {
     console.log('Testing email connection...');
+    console.log(`Using email: ${process.env.EMAIL_USER || 'ogunseitangold105@gmail.com'}`);
+    
+    // Verify connection configuration
     await transporter.verify();
-    console.log('Email server is ready to send messages');
+    console.log('Email server connection successful!');
     return true;
   } catch (error) {
     console.error('Email connection error:', error);
+    console.error('Email environment variables might not be loaded correctly');
+    
+    // Check if env variables are defined
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.error('EMAIL_USER or EMAIL_PASS environment variables are missing');
+    }
+    
     return false;
   }
 };
