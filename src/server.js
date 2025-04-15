@@ -3,13 +3,10 @@ const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const app = require('./app');
 
-// Load environment variables
 dotenv.config();
 
-// Set the port
 const PORT = process.env.PORT || 3000;
 
-// Connect to MongoDB
 const startServer = async () => {
   try {
     const isConnected = await connectDB();
