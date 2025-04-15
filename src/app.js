@@ -14,8 +14,12 @@ dotenv.config();
 
 const app = express();
 
+// Parse JSON bodies
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 // More flexible CORS configuration
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001').split(',');
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001,http://localhost:5173,https://tasktrek-frontend.vercel.app').split(',');
 
 const corsOptions = {
   origin: function (origin, callback) {
@@ -27,7 +31,7 @@ const corsOptions = {
       callback(null, true);
     } else {
       console.log('CORS blocked request from:', origin);
-      callback(new Error('Not allowed by CORS'));
+      callback(null, true); // Allow all origins in development
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

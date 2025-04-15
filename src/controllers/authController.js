@@ -26,7 +26,7 @@ const generateRefreshToken = (userId) => {
 // Signup user
 const signup = async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    let { username, email, password, name } = req.body;
     
     // Validate input
     if (!username || !email || !password) {
@@ -34,6 +34,11 @@ const signup = async (req, res) => {
         success: false,
         message: 'Please provide username, email and password'
       });
+    }
+    
+    // Use username as name if name is not provided
+    if (!name) {
+      name = username;
     }
     
     // Check if user already exists
@@ -55,7 +60,8 @@ const signup = async (req, res) => {
     const user = await User.create({
       username,
       email,
-      password: hashedPassword
+      password: hashedPassword,
+      name // Add the name field
     });
     
     // Generate tokens

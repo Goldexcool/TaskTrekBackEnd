@@ -6,7 +6,8 @@ const UserSchema = new mongoose.Schema(
     // Support both name and username fields
     name: { 
       type: String,
-      required: [true, 'Please add a name'] 
+      required: [true, 'Please add a name'],
+      trim: true
     },
     username: {
       type: String,

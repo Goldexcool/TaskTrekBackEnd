@@ -1,36 +1,51 @@
 const nodemailer = require('nodemailer');
 
-// Create reusable transporter with more explicit configuration
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true, // Use SSL
-  auth: {
-    user: process.env.EMAIL_USER || '',
-    pass: process.env.EMAIL_PASS || 'y' 
-  },
-  debug: true
+console.log('Setting up email transporter with:', {
+  user: process.env.EMAIL_USER ? process.env.EMAIL_USER.substring(0, 5) + '...' : 'undefined',
+  pass: process.env.EMAIL_PASS ? '[REDACTED]' : 'undefined'
 });
 
-// Test email connection with better error handling
+// Create reusable transporter
+let transporter = null;
+
+const getTransporter = () => {
+  if (transporter) return transporter;
+  
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.error('Email configuration missing! Check your .env file');
+    return null;
+  }
+  
+  // Create new transporter
+  transporter = nodemailer.createTransport({
+    service: 'gmail',  // Use Gmail service
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS  // This should be an app password
+    },
+    debug: true,
+    logger: true // Enable logging
+  });
+  
+  return transporter;
+};
+
+// Test email connection
 const testEmailConnection = async () => {
   try {
     console.log('Testing email connection...');
-    console.log(`Using email: ${process.env.EMAIL_USER || ''}`);
     
-    // Verify connection configuration
-    await transporter.verify();
+    const transport = getTransporter();
+    if (!transport) {
+      console.error('Email transporter not configured');
+      return false;
+    }
+    
+    await transport.verify();
     console.log('Email server connection successful!');
     return true;
   } catch (error) {
     console.error('Email connection error:', error);
-    console.error('Email environment variables might not be loaded correctly');
-    
-    // Check if env variables are defined
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.error('EMAIL_USER or EMAIL_PASS environment variables are missing');
-    }
-    
     return false;
   }
 };
@@ -42,7 +57,11 @@ testEmailConnection();
 const sendPasswordResetEmail = async (email, resetToken) => {
   try {
     console.log(`Attempting to send password reset email to: ${email}`);
-    console.log(`Using email credentials: ${process.env.EMAIL_USER}`);
+    
+    const transport = getTransporter();
+    if (!transport) {
+      throw new Error('Email transporter not configured');
+    }
     
     // Create reset URL
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
@@ -60,7 +79,7 @@ const sendPasswordResetEmail = async (email, resetToken) => {
       `
     };
     
-    const info = await transporter.sendMail(mailOptions);
+    const info = await transport.sendMail(mailOptions);
     console.log(`Password reset email sent: ${info.messageId}`);
     return true;
   } catch (error) {
@@ -74,6 +93,11 @@ const sendPasswordResetConfirmationEmail = async (email) => {
   try {
     console.log(`Sending password reset confirmation to: ${email}`);
     
+    const transport = getTransporter();
+    if (!transport) {
+      throw new Error('Email transporter not configured');
+    }
+    
     const mailOptions = {
       from: `"TaskTrek Support" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -85,7 +109,7 @@ const sendPasswordResetConfirmationEmail = async (email) => {
       `
     };
     
-    const info = await transporter.sendMail(mailOptions);
+    const info = await transport.sendMail(mailOptions);
     console.log(`Password reset confirmation email sent: ${info.messageId}`);
     return true;
   } catch (error) {
@@ -98,6 +122,12 @@ const sendPasswordResetConfirmationEmail = async (email) => {
 const sendWelcomeEmail = async (user) => {
   try {
     console.log(`Sending welcome email to: ${user.email}`);
+    
+    const transport = getTransporter();
+    if (!transport) {
+      console.error('Email transporter not configured');
+      return false;
+    }
     
     const mailOptions = {
       from: `"TaskTrek" <${process.env.EMAIL_USER}>`,
@@ -138,7 +168,7 @@ const sendWelcomeEmail = async (user) => {
       `
     };
     
-    const info = await transporter.sendMail(mailOptions);
+    const info = await transport.sendMail(mailOptions);
     console.log(`Welcome email sent: ${info.messageId}`);
     return true;
   } catch (error) {
