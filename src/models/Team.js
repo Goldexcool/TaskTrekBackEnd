@@ -3,37 +3,29 @@ const mongoose = require('mongoose');
 const TeamSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, 'Please provide a team name'],
-    trim: true
+    required: [true, 'Please add a team name'],
+    trim: true,
+    maxlength: [50, 'Team name cannot be more than 50 characters']
   },
   description: {
     type: String,
-    trim: true
+    maxlength: [500, 'Description cannot be more than 500 characters']
   },
   owner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Team must have an owner']
+    required: true
   },
   members: [
     {
-      user: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-      },
-      role: {
-        type: String,
-        enum: ['admin', 'member'],
-        default: 'member'
-      }
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
     }
   ],
   createdAt: {
     type: Date,
     default: Date.now
   }
-}, {
-  timestamps: true
 });
 
 module.exports = mongoose.model('Team', TeamSchema);

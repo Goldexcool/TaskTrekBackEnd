@@ -19,25 +19,32 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // More flexible CORS configuration
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001,http://localhost:5173,https://tasktrek-frontend.vercel.app').split(',');
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:5174').split(',');
 
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || 
+    // Allow requests with no origin (like mobile apps, Postman, or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Check if the origin is allowed
+    if (allowedOrigins.includes(origin) || 
         origin.match(/\.vercel\.app$/) || 
-        origin.match(/\.netlify\.app$/)) {
+        origin.match(/\.netlify\.app$/) ||
+        process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
       console.log('CORS blocked request from:', origin);
-      callback(null, true); // Allow all origins in development
+      callback(null, true); // Allow all origins in development mode
+      // In production, you might want to restrict this:
+      // callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
-  maxAge: 86400
+  maxAge: 86400 // 24 hours
 };
 
 // Apply CORS middleware

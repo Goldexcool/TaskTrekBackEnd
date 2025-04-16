@@ -174,7 +174,7 @@ const sendWelcomeEmail = async (user) => {
       to: user.email,
       subject: 'Welcome to TaskTrek! Your Productivity Journey Begins',
       html: `
-        <div style="background: linear-gradient(135deg, #1a2036 0%, #2d3a5d 100%); color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
+        <div style="background: linear-gradient(135deg, #ffffff 0%; color: #000000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
           <div style="text-align: center; margin-bottom: 30px;">
             <div style="font-size: 32px; font-weight: bold; letter-spacing: 1.5px; background: linear-gradient(90deg, #64B5F6, #7E57C2); -webkit-background-clip: text; color: transparent; display: inline-block; margin-bottom: 5px;">TaskTrek</div>
             <div style="width: 60px; height: 4px; background: linear-gradient(90deg, #64B5F6, #7E57C2); margin: 0 auto;"></div>

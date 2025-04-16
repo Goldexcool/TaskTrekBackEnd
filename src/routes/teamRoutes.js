@@ -1,26 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const { 
-  getTeams, 
-  getTeamById, 
-  createTeam, 
-  updateTeam, 
-  deleteTeam,
-  addMember,
-  removeMember
-} = require('../controllers/teamController');
-const { authenticateToken } = require('../middleware/authMiddleware');
-
-// Protect all team routes
-router.use(authenticateToken);
+const authMiddleware = require('../middleware/authMiddleware');
+const teamController = require('../controllers/teamController');
 
 // Team routes
-router.get('/', getTeams);
-router.get('/:id', getTeamById);
-router.post('/', createTeam);
-router.put('/:id', updateTeam);
-router.delete('/:id', deleteTeam);
-router.post('/:id/members', addMember);
-router.delete('/:id/members/:userId', removeMember);
+router.route('/')
+  .post(authMiddleware.authenticateToken, teamController.createTeam)
+  .get(authMiddleware.authenticateToken, teamController.getTeams);
+
+router.route('/:id')
+  .get(authMiddleware.authenticateToken, teamController.getTeamById)
+  .put(authMiddleware.authenticateToken, teamController.updateTeam)
+  .delete(authMiddleware.authenticateToken, teamController.deleteTeam);
+
+router.post('/:id/members', authMiddleware.authenticateToken, teamController.addMember);
 
 module.exports = router;

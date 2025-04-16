@@ -3,57 +3,40 @@ const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const app = require('./app');
 
+// Load environment variables
 dotenv.config();
 
-// Try different ports if the default one is in use
-const attemptToStartServer = async (port) => {
-  try {
-    // Start the server with the given port
-    const server = app.listen(port, () => {
-      console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${port}`);
-    });
-    
-    // Set up error handling
-    server.on('error', (error) => {
-      if (error.code === 'EADDRINUSE') {
-        console.log(`Port ${port} is already in use, trying ${port + 1}...`);
-        // Try the next port
-        server.close();
-        attemptToStartServer(port + 1);
-      } else {
-        console.error('Server error:', error);
-        process.exit(1);
-      }
-    });
-  } catch (error) {
-    console.error(`Server startup error: ${error.message}`);
-    process.exit(1);
-  }
-};
-
+// Connect to database
 const startServer = async () => {
   try {
-    const isConnected = await connectDB();
+    await connectDB();
     
-    if (!isConnected) {
-      console.error('Failed to connect to MongoDB. Server will not start.');
-      process.exit(1);
-    }
+    // Define port with fallbacks
+    const PORT = process.env.PORT || 3000;
     
-    // Try to start the server with the initial port
-    const initialPort = process.env.PORT || 3000;
-    attemptToStartServer(initialPort);
+    // Try to start the server
+    const server = app.listen(PORT, () => {
+      console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+      console.log(`CORS configured to allow origins: ${process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001'}`);
+    });
+    
+    // Handle unhandled errors
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        console.log(`Port ${PORT} is already in use. Trying port ${PORT + 1}...`);
+        setTimeout(() => {
+          server.close();
+          server.listen(PORT + 1);
+        }, 1000);
+      } else {
+        console.error('Server error:', error);
+      }
+    });
+    
   } catch (error) {
-    console.error(`Server startup error: ${error.message}`);
+    console.error(`Error starting server: ${error.message}`);
     process.exit(1);
   }
 };
-
-// Handle unhandled promise rejections
-process.on('unhandledRejection', (err) => {
-  console.error(`Unhandled Rejection: ${err.message}`);
-  // Close server and exit process
-  process.exit(1);
-});
 
 startServer();

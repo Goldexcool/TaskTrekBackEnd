@@ -60,7 +60,12 @@ const UserSchema = new mongoose.Schema(
       type: String,
       default: null,
       select: false
-    }
+    },
+    // Add this to your existing User schema
+    teams: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Team'
+    }]
   },
   { timestamps: true }
 );
