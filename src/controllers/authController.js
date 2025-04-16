@@ -315,8 +315,19 @@ const logout = async (req, res) => {
 // Get current user
 const getMe = async (req, res) => {
   try {
+    console.log('GetMe called with user ID:', req.user?.id);
+    
+    if (!req.user || !req.user.id) {
+      console.error('User ID missing in request object');
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required"
+      });
+    }
+    
     const user = await User.findById(req.user.id).select('-password -refreshToken');
-
+    console.log('User found?', !!user);
+    
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -326,9 +337,19 @@ const getMe = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: user
+      data: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        name: user.name,
+        avatar: user.avatar,
+        teams: user.teams,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      }
     });
   } catch (error) {
+    console.error('GetMe error:', error);
     return res.status(500).json({
       success: false,
       message: "Server error",
@@ -476,6 +497,7 @@ const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN format
   
   if (!token) {
+    console.log('No token provided in request:', req.headers);
     return res.status(401).json({ 
       success: false, 
       message: "Access denied. No token provided." 
@@ -484,9 +506,11 @@ const authenticateToken = (req, res, next) => {
   
   try {
     const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+    console.log('Token decoded successfully:', decoded);
     req.user = { id: decoded.id };
     next();
   } catch (error) {
+    console.error('Token verification error:', error.message);
     return res.status(403).json({ 
       success: false, 
       message: "Invalid or expired token" 

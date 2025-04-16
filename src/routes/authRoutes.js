@@ -41,4 +41,6 @@ router.get('/test-email', async (req, res) => {
   }
 });
 
+router.get('/me', authController.authenticateToken, authController.getMe);
+
 module.exports = router;
