@@ -18,4 +18,27 @@ router.post('/logout', authenticateToken, authController.logout);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password/:token', authController.resetPassword);
 
+// Add this to your authRoutes.js to test email functionality
+router.get('/test-email', async (req, res) => {
+  try {
+    const testUser = {
+      username: 'testuser',
+      email: 'test@example.com'
+    };
+    
+    await sendWelcomeEmail(testUser);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Test email sent successfully'
+    });
+  } catch (error) {
+    console.error('Test email error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;

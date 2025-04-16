@@ -6,8 +6,10 @@ const UserSchema = new mongoose.Schema(
     // Support both name and username fields
     name: { 
       type: String,
-      required: [true, 'Please add a name'],
-      trim: true
+      trim: true,
+      default: function() {
+        return this.username; // Use username as default name
+      }
     },
     username: {
       type: String,

@@ -3,7 +3,17 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const UserService = require('../services/userService');
 const bcrypt = require('bcryptjs');
-const { sendPasswordResetEmail, sendPasswordResetConfirmationEmail } = require('../utils/mailer');
+const { 
+  sendPasswordResetEmail, 
+  sendPasswordResetConfirmationEmail,
+  sendWelcomeEmail 
+} = require('../utils/mailer');
+
+console.log('Available mailer functions:', {
+  sendPasswordResetEmail: typeof sendPasswordResetEmail,
+  sendPasswordResetConfirmationEmail: typeof sendPasswordResetConfirmationEmail,
+  sendWelcomeEmail: typeof sendWelcomeEmail
+});
 
 // Generate access token
 const generateAccessToken = (userId) => {
@@ -26,7 +36,7 @@ const generateRefreshToken = (userId) => {
 // Signup user
 const signup = async (req, res) => {
   try {
-    let { username, email, password, name } = req.body;
+    const { username, email, password, name } = req.body;
     
     // Validate input
     if (!username || !email || !password) {
@@ -37,9 +47,7 @@ const signup = async (req, res) => {
     }
     
     // Use username as name if name is not provided
-    if (!name) {
-      name = username;
-    }
+    const userName = name || username;
     
     // Check if user already exists
     const existingUser = await User.findOne({ 
@@ -61,7 +69,7 @@ const signup = async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      name // Add the name field
+      name: userName
     });
     
     // Generate tokens
@@ -69,13 +77,14 @@ const signup = async (req, res) => {
     const refreshToken = generateRefreshToken(user._id);
     
     // Send welcome email (non-blocking)
-    sendWelcomeEmail(user).then(sent => {
-      if (sent) {
-        console.log(`Welcome email successfully sent to ${user.email}`);
-      } else {
-        console.log(`Failed to send welcome email to ${user.email}`);
-      }
-    });
+    try {
+      console.log('Attempting to send welcome email to new user');
+      await sendWelcomeEmail(user);
+      console.log('Welcome email successfully queued');
+    } catch (emailError) {
+      console.error('Error sending welcome email:', emailError);
+      // Continue with registration even if email fails
+    }
     
     // Return user info and tokens
     res.status(201).json({
@@ -84,7 +93,8 @@ const signup = async (req, res) => {
       user: {
         id: user._id,
         username: user.username,
-        email: user.email
+        email: user.email,
+        name: user.name
       },
       accessToken,
       refreshToken
