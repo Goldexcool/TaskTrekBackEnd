@@ -173,27 +173,23 @@ const deleteTeam = async (req, res) => {
   }
 };
 
+// @desc    Add a member to a team
+// @route   POST /api/teams/:id/members
+// @access  Private
 const addMember = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { id } = req.params; // Team ID
+    const { email } = req.body; // Email of the user to add
     
     if (!email) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide an email address'
+        message: 'Please provide the email of the user you want to add'
       });
     }
     
-    const user = await User.findOne({ email });
-    
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
-    }
-    
-    const team = await Team.findById(req.params.id);
+    // Find the team
+    const team = await Team.findById(id);
     
     if (!team) {
       return res.status(404).json({
@@ -202,25 +198,54 @@ const addMember = async (req, res) => {
       });
     }
     
-    // Check if user is the owner of the team
+    // Check if the current user is the team owner
     if (team.owner.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
-        message: 'You are not authorized to add members to this team'
+        message: 'Only the team owner can add members'
       });
     }
     
-    // Add the user to the team's members array
-    team.members.push(user._id);
+    // Find the user to add by email
+    const userToAdd = await User.findOne({ email });
+    
+    if (!userToAdd) {
+      return res.status(404).json({
+        success: false,
+        message: 'User with this email does not exist'
+      });
+    }
+    
+    // Check if user is already a member
+    if (team.members.includes(userToAdd._id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'User is already a member of this team'
+      });
+    }
+    
+    // Add user to team members
+    team.members.push(userToAdd._id);
     await team.save();
     
-    // Add the team to the user's teams array
-    user.teams.push(team._id);
-    await user.save();
+    // Add team to user's teams
+    userToAdd.teams = userToAdd.teams || [];
+    if (!userToAdd.teams.includes(team._id)) {
+      userToAdd.teams.push(team._id);
+      await userToAdd.save();
+    }
     
     res.status(200).json({
       success: true,
-      data: team
+      message: 'Member added successfully',
+      data: {
+        teamId: team._id,
+        newMember: {
+          id: userToAdd._id,
+          email: userToAdd.email,
+          name: userToAdd.name || userToAdd.username
+        }
+      }
     });
   } catch (error) {
     console.error('Add member error:', error);
@@ -231,11 +256,75 @@ const addMember = async (req, res) => {
   }
 };
 
+// @desc    Remove a member from a team
+// @route   DELETE /api/teams/:id/members/:userId
+// @access  Private
+const removeMember = async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+    
+    // Find the team
+    const team = await Team.findById(id);
+    
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team not found'
+      });
+    }
+    
+    // Check if the current user is the team owner
+    if (team.owner.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the team owner can remove members'
+      });
+    }
+    
+    // Prevent removing the owner
+    if (team.owner.toString() === userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot remove the team owner'
+      });
+    }
+    
+    // Check if user is a member
+    if (!team.members.includes(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'User is not a member of this team'
+      });
+    }
+    
+    // Remove user from team members
+    team.members = team.members.filter(member => member.toString() !== userId);
+    await team.save();
+    
+    // Remove team from user's teams
+    await User.findByIdAndUpdate(userId, {
+      $pull: { teams: team._id }
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: 'Member removed successfully'
+    });
+  } catch (error) {
+    console.error('Remove member error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred while removing the member'
+    });
+  }
+};
+
 module.exports = {
   createTeam,
   getTeams,
   getTeamById,
   updateTeam,
   deleteTeam,
-  addMember
+  addMember,
+  removeMember
 };
