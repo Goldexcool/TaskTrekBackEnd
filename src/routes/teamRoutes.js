@@ -13,6 +13,12 @@ router.route('/:id')
   .put(authMiddleware.authenticateToken, teamController.updateTeam)
   .delete(authMiddleware.authenticateToken, teamController.deleteTeam);
 
+// Member management
 router.post('/:id/members', authMiddleware.authenticateToken, teamController.addMember);
+router.delete('/:id/members/:userId', authMiddleware.authenticateToken, teamController.removeMember);
+
+// Role management
+router.put('/:id/members/:userId/role', authMiddleware.authenticateToken, teamController.changeRole);
+router.put('/:id/transfer-ownership', authMiddleware.authenticateToken, teamController.transferOwnership);
 
 module.exports = router;
