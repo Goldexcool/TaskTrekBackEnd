@@ -18,6 +18,7 @@ router.route('/:id')
   .delete(authMiddleware.authenticateToken, teamController.deleteTeam);
 
 // Member management
+router.get('/:id/members', authMiddleware.authenticateToken, teamController.getTeamMembers);
 router.post('/:id/members', authMiddleware.authenticateToken, teamController.addMember);
 router.delete('/:id/members/:userId', authMiddleware.authenticateToken, teamController.removeMember);
 

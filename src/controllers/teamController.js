@@ -547,6 +547,63 @@ const checkTeamExists = async (req, res) => {
   }
 };
 
+
+const getTeamMembers = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Find the team and populate member information
+    const team = await Team.findById(id)
+      .populate({
+        path: 'members.user',
+        select: 'username email name avatar'
+      });
+    
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team not found'
+      });
+    }
+    
+    // Check if the current user is a member of this team
+    const isMember = team.members.some(
+      member => member.user._id.toString() === req.user.id
+    );
+    
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not a member of this team'
+      });
+    }
+    
+    // Format the response
+    const members = team.members.map(member => ({
+      id: member.user._id,
+      username: member.user.username,
+      email: member.user.email,
+      name: member.user.name,
+      avatar: member.user.avatar,
+      role: member.role,
+      joinedAt: member.joinedAt,
+      isOwner: team.owner.toString() === member.user._id.toString()
+    }));
+    
+    res.status(200).json({
+      success: true,
+      count: members.length,
+      data: members
+    });
+  } catch (error) {
+    console.error('Get team members error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred while fetching team members'
+    });
+  }
+};
+
 module.exports = {
   createTeam,
   getTeams,
@@ -557,5 +614,6 @@ module.exports = {
   removeMember,
   changeRole,
   transferOwnership,
-  checkTeamExists
+  checkTeamExists,
+  getTeamMembers
 };
