@@ -8,6 +8,10 @@ router.route('/')
   .post(authMiddleware.authenticateToken, teamController.createTeam)
   .get(authMiddleware.authenticateToken, teamController.getTeams);
 
+// Check if team exists (public route - no auth required)
+router.get('/exists/:teamId', teamController.checkTeamExists);
+
+// Keep this BEFORE the route with the ID parameter to avoid conflicts
 router.route('/:id')
   .get(authMiddleware.authenticateToken, teamController.getTeamById)
   .put(authMiddleware.authenticateToken, teamController.updateTeam)

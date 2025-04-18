@@ -504,6 +504,49 @@ const transferOwnership = async (req, res) => {
   }
 };
 
+const checkTeamExists = async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    
+    // Validate team ID format
+    if (!teamId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(200).json({
+        success: true,
+        exists: false,
+        message: 'Invalid team ID format'
+      });
+    }
+    
+    // Check if team exists
+    const team = await Team.findById(teamId).select('name avatar');
+    
+    if (!team) {
+      return res.status(200).json({
+        success: true,
+        exists: false,
+        message: 'Team not found'
+      });
+    }
+    
+    // Team exists - return basic info
+    return res.status(200).json({
+      success: true,
+      exists: true,
+      team: {
+        id: team._id,
+        name: team.name,
+        avatar: team.avatar
+      }
+    });
+  } catch (error) {
+    console.error('Check team exists error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred while checking if team exists'
+    });
+  }
+};
+
 module.exports = {
   createTeam,
   getTeams,
@@ -513,5 +556,6 @@ module.exports = {
   addMember,
   removeMember,
   changeRole,
-  transferOwnership
+  transferOwnership,
+  checkTeamExists
 };
