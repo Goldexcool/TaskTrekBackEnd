@@ -242,41 +242,56 @@ const getBoardsByTeam = async (req, res) => {
 // @access  Private
 const getAllBoardsComplete = async (req, res) => {
   try {
-    // Find all boards where the user is a member
-    const boards = await Board.find({ members: req.user.id })
-      .populate({
-        path: 'team',
-        select: 'name avatar'
-      })
-      .populate({
-        path: 'owner',
-        select: 'username email name avatar'
-      })
-      .populate({
-        path: 'members',
-        select: 'username email name avatar'
-      });
+    console.log('Getting complete boards data for user ID:', req.user.id);
     
-    // Get all columns and tasks for these boards in a more efficient way
+    // First, find all teams the user is a member of
+    const userTeams = await Team.find({ 
+      'members.user': req.user.id 
+    }).select('_id');
+    
+    const teamIds = userTeams.map(team => team._id);
+    console.log(`User is member of ${teamIds.length} teams`);
+    
+    // Find all boards created by the user OR belonging to teams the user is part of
+    const boards = await Board.find({ 
+      $or: [
+        { createdBy: req.user.id },
+        { team: { $in: teamIds } }
+      ] 
+    })
+    .populate('team', 'name avatar')
+    .populate('createdBy', 'username email name avatar');
+    
+    console.log(`Found ${boards.length} boards`);
+    
+    if (boards.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: []
+      });
+    }
+    
+    // Get all columns and tasks for these boards
     const boardIds = boards.map(board => board._id);
+    console.log('Board IDs:', boardIds);
     
     // Get all columns for these boards
     const columns = await Column.find({ board: { $in: boardIds } })
       .sort({ position: 1 });
     
-    // Get all tasks for these boards
-    const tasks = await Task.find({ 
-        board: { $in: boardIds } 
-      })
-      .populate({
-        path: 'assignedTo',
-        select: 'username email name avatar'
-      })
-      .populate({
-        path: 'createdBy',
-        select: 'username email name'
-      })
+    console.log(`Found ${columns.length} columns`);
+    
+    // Get all tasks for these boards by looking at their columns
+    // Since Task model might not have a direct reference to board
+    const columnIds = columns.map(column => column._id);
+    
+    const tasks = await Task.find({ column: { $in: columnIds } })
+      .populate('assignedTo', 'username email name avatar')
+      .populate('createdBy', 'username email name avatar')
       .sort({ position: 1 });
+      
+    console.log(`Found ${tasks.length} tasks`);
     
     // Organize data by board
     const completeBoards = boards.map(board => {
@@ -290,11 +305,11 @@ const getAllBoardsComplete = async (req, res) => {
             .map(task => ({
               id: task._id,
               title: task.title,
-              description: task.description,
-              position: task.position,
+              description: task.description || '',
+              position: task.position || 0,
               dueDate: task.dueDate,
-              priority: task.priority,
-              labels: task.labels,
+              priority: task.priority || 'medium',
+              labels: task.labels || [],
               assignedTo: task.assignedTo,
               createdBy: task.createdBy,
               createdAt: task.createdAt,
@@ -304,7 +319,7 @@ const getAllBoardsComplete = async (req, res) => {
           return {
             id: column._id,
             title: column.title,
-            position: column.position,
+            position: column.position || 0,
             tasks: columnTasks,
             tasksCount: columnTasks.length,
             createdAt: column.createdAt,
@@ -314,19 +329,18 @@ const getAllBoardsComplete = async (req, res) => {
       
       return {
         id: board._id,
-        title: board.title,
-        description: board.description,
+        title: board.name || board.title, // Support both field names
+        description: board.description || '',
         team: board.team,
-        owner: board.owner,
-        backgroundColor: board.backgroundColor,
+        createdBy: board.createdBy, // Replacing owner with createdBy
+        backgroundColor: board.backgroundColor || '#ffffff',
         image: board.image,
-        members: board.members,
         columns: boardColumns,
         columnsCount: boardColumns.length,
         totalTasks: boardColumns.reduce((sum, column) => sum + column.tasksCount, 0),
         createdAt: board.createdAt,
         updatedAt: board.updatedAt,
-        isOwner: board.owner._id.toString() === req.user.id
+        isCreator: board.createdBy._id.toString() === req.user.id
       };
     });
     
