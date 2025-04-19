@@ -1,5 +1,7 @@
 const Board = require('../models/Board');
 const Team = require('../models/Team');
+const Column = require('../models/Column');
+const Task = require('../models/Task');
 
 // Create a new board
 const createBoard = async (req, res) => {
@@ -235,6 +237,113 @@ const getBoardsByTeam = async (req, res) => {
   }
 };
 
+// @desc    Get detailed view of all boards with columns and tasks
+// @route   GET /api/boards/complete
+// @access  Private
+const getAllBoardsComplete = async (req, res) => {
+  try {
+    // Find all boards where the user is a member
+    const boards = await Board.find({ members: req.user.id })
+      .populate({
+        path: 'team',
+        select: 'name avatar'
+      })
+      .populate({
+        path: 'owner',
+        select: 'username email name avatar'
+      })
+      .populate({
+        path: 'members',
+        select: 'username email name avatar'
+      });
+    
+    // Get all columns and tasks for these boards in a more efficient way
+    const boardIds = boards.map(board => board._id);
+    
+    // Get all columns for these boards
+    const columns = await Column.find({ board: { $in: boardIds } })
+      .sort({ position: 1 });
+    
+    // Get all tasks for these boards
+    const tasks = await Task.find({ 
+        board: { $in: boardIds } 
+      })
+      .populate({
+        path: 'assignedTo',
+        select: 'username email name avatar'
+      })
+      .populate({
+        path: 'createdBy',
+        select: 'username email name'
+      })
+      .sort({ position: 1 });
+    
+    // Organize data by board
+    const completeBoards = boards.map(board => {
+      // Get columns for this board
+      const boardColumns = columns
+        .filter(column => column.board.toString() === board._id.toString())
+        .map(column => {
+          // Get tasks for this column
+          const columnTasks = tasks
+            .filter(task => task.column.toString() === column._id.toString())
+            .map(task => ({
+              id: task._id,
+              title: task.title,
+              description: task.description,
+              position: task.position,
+              dueDate: task.dueDate,
+              priority: task.priority,
+              labels: task.labels,
+              assignedTo: task.assignedTo,
+              createdBy: task.createdBy,
+              createdAt: task.createdAt,
+              updatedAt: task.updatedAt
+            }));
+          
+          return {
+            id: column._id,
+            title: column.title,
+            position: column.position,
+            tasks: columnTasks,
+            tasksCount: columnTasks.length,
+            createdAt: column.createdAt,
+            updatedAt: column.updatedAt
+          };
+        });
+      
+      return {
+        id: board._id,
+        title: board.title,
+        description: board.description,
+        team: board.team,
+        owner: board.owner,
+        backgroundColor: board.backgroundColor,
+        image: board.image,
+        members: board.members,
+        columns: boardColumns,
+        columnsCount: boardColumns.length,
+        totalTasks: boardColumns.reduce((sum, column) => sum + column.tasksCount, 0),
+        createdAt: board.createdAt,
+        updatedAt: board.updatedAt,
+        isOwner: board.owner._id.toString() === req.user.id
+      };
+    });
+    
+    res.status(200).json({
+      success: true,
+      count: completeBoards.length,
+      data: completeBoards
+    });
+  } catch (error) {
+    console.error('Get all boards complete error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred while retrieving board data'
+    });
+  }
+};
+
 // Export all functions
 module.exports = { 
   createBoard, 
@@ -242,5 +351,6 @@ module.exports = {
   getBoardById,
   updateBoard,
   deleteBoard,
-  getBoardsByTeam
+  getBoardsByTeam,
+  getAllBoardsComplete
 };
