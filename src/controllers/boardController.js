@@ -5,61 +5,38 @@ const Task = require('../models/Task');
 
 // Create a new board
 const createBoard = async (req, res) => {
-    try {
-        // Log the request body for debugging
-        console.log('Creating board with data:', req.body);
-        
-        // Extract data from request body
-        const { name, description, team, teamId } = req.body;
-        
-        // Use either team or teamId (for backward compatibility)
-        const teamIdentifier = team || teamId;
-        
-        if (!teamIdentifier) {
-            return res.status(400).json({
-                success: false,
-                message: 'Team ID is required'
-            });
-        }
-        
-        console.log('Using team ID:', teamIdentifier);
-        
-        // Check if team exists
-        const teamExists = await Team.findById(teamIdentifier);
-        if (!teamExists) {
-            return res.status(404).json({
-                success: false,
-                message: 'Team not found'
-            });
-        }
-        
-        // Prepare board data
-        const boardData = {
-            name,
-            description,
-            team: teamIdentifier, // Ensure this matches your schema field name
-            createdBy: req.user.id
-        };
-        
-        console.log('Creating board with processed data:', boardData);
-        
-        // Create the board
-        const board = await Board.create(boardData);
-        
-        // Return success response
-        return res.status(201).json({
-            success: true,
-            message: 'Board created successfully',
-            data: board
-        });
-    } catch (error) {
-        console.error('Board creation error:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Failed to create board',
-            error: error.message
-        });
+  try {
+    const { title, description, teamId, backgroundColor, colorScheme, image } = req.body;
+    
+    // Validate required fields
+    if (!title || !teamId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide title and team ID'
+      });
     }
+    
+    const board = await Board.create({
+      title,
+      description,
+      team: teamId,
+      createdBy: req.user.id,
+      backgroundColor,  
+      colorScheme,      
+      image
+    });
+    
+    res.status(201).json({
+      success: true,
+      data: board
+    });
+  } catch (error) {
+    console.error('Error creating board:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
 };
 
 // Get all boards for a user
@@ -138,8 +115,11 @@ const getBoardById = async (req, res) => {
 // Update board
 const updateBoard = async (req, res) => {
   try {
-    const { name, description } = req.body;
-    const board = await Board.findById(req.params.id);
+    const boardId = req.params.id;
+    const { title, description, backgroundColor, colorScheme, image } = req.body;
+    
+    // Find board
+    const board = await Board.findById(boardId);
     
     if (!board) {
       return res.status(404).json({
@@ -148,7 +128,7 @@ const updateBoard = async (req, res) => {
       });
     }
     
-    // Make sure the board belongs to the user
+    // Check ownership
     if (board.createdBy.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -156,15 +136,24 @@ const updateBoard = async (req, res) => {
       });
     }
     
-    // Update fields
-    if (name) board.name = name;
-    if (description !== undefined) board.description = description;
-    
-    await board.save();
+    // Find and update the board
+    const updatedBoard = await Board.findByIdAndUpdate(
+      boardId,
+      {
+        // Only update fields that are provided
+        ...(title && { title }),
+        ...(description && { description }),
+        ...(backgroundColor && { backgroundColor }),
+        ...(colorScheme && { colorScheme }),
+        ...(image && { image })
+      },
+      { new: true, runValidators: true }
+    ).populate('team', 'name avatar')
+     .populate('createdBy', 'username email name avatar');
     
     res.status(200).json({
       success: true,
-      data: board
+      data: updatedBoard
     });
   } catch (error) {
     console.error('Error updating board:', error);
@@ -347,11 +336,12 @@ const getAllBoardsComplete = async (req, res) => {
       
       return {
         id: board._id,
-        title: board.name || board.title, // Support both field names
+        title: board.name || board.title,
         description: board.description || '',
         team: board.team,
-        createdBy: board.createdBy, // Replacing owner with createdBy
-        backgroundColor: board.backgroundColor || '#ffffff',
+        createdBy: board.createdBy,
+        backgroundColor: board.backgroundColor || '#f5f5f5',
+        colorScheme: board.colorScheme || 'default',
         image: board.image,
         columns: boardColumns,
         columnsCount: boardColumns.length,

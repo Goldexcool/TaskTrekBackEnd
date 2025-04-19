@@ -1,28 +1,36 @@
 const mongoose = require('mongoose');
 
 const BoardSchema = new mongoose.Schema({
-    name: {
+    title: {
         type: String,
-        required: [true, 'Please provide a board name'],
-        trim: true
+        required: [true, 'Please add a title'],
+        trim: true,
+        maxlength: [50, 'Title cannot be more than 50 characters']
     },
     description: {
         type: String,
-        trim: true
+        maxlength: [200, 'Description cannot be more than 200 characters']
     },
-    team: {  // This field name must match what you provide in the request
+    team: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Team',
-        required: [true, 'Board must be associated with a team']
+        required: true
     },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: [true, 'Board must have a creator']
+        required: true
     },
-    createdAt: {
-        type: Date,
-        default: Date.now
+    backgroundColor: {
+        type: String,
+        default: '#f5f5f5' // Light gray default
+    },
+    colorScheme: {
+        type: String,
+        default: 'default'
+    },
+    image: {
+        type: String
     }
 }, {
     timestamps: true
