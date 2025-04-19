@@ -178,7 +178,19 @@ const updateBoard = async (req, res) => {
 // Delete board
 const deleteBoard = async (req, res) => {
   try {
-    const board = await Board.findById(req.params.id);
+    const boardId = req.params.id;
+    
+    // Add validation to check if boardId exists
+    if (!boardId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Board ID is required'
+      });
+    }
+    
+    console.log('Attempting to delete board with ID:', boardId);
+    
+    const board = await Board.findById(boardId);
     
     if (!board) {
       return res.status(404).json({
@@ -195,11 +207,17 @@ const deleteBoard = async (req, res) => {
       });
     }
     
-    await Board.deleteOne({ _id: req.params.id });
+    // Use findByIdAndDelete for a more reliable operation
+    await Board.findByIdAndDelete(boardId);
     
+    // Additionally, you might want to delete related columns and tasks
+    const deletedColumns = await Column.deleteMany({ board: boardId });
+    console.log(`Deleted ${deletedColumns.deletedCount} columns`);
+    
+    // Return success response
     res.status(200).json({
       success: true,
-      message: 'Board deleted successfully'
+      message: 'Board and all associated columns deleted successfully'
     });
   } catch (error) {
     console.error('Error deleting board:', error);
