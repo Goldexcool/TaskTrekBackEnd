@@ -5,13 +5,30 @@ const Board = require('../models/Board');
 // Create task
 const createTask = async (req, res) => {
   try {
-    const { title, description, columnId, priority, position, dueDate, assignedTo } = req.body;
+    const { 
+      title, 
+      description, 
+      columnId, 
+      position, 
+      dueDate,
+      priority, // Add priority to destructuring
+      labels, 
+      assignedTo 
+    } = req.body;
     
     // Validate required fields
     if (!title || !columnId) {
       return res.status(400).json({
         success: false,
-        message: "Please provide title and columnId"
+        message: 'Please provide task title and column ID'
+      });
+    }
+    
+    // Validate priority if provided
+    if (priority && !['low', 'medium', 'high'].includes(priority)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Priority must be low, medium, or high'
       });
     }
     
@@ -61,9 +78,10 @@ const createTask = async (req, res) => {
       title,
       description,
       column: columnId,
-      priority: priority || 'medium',
+      priority, // Include priority
       position: position || 0,
       dueDate: formattedDueDate,
+      labels,
       assignedTo: assignedTo || req.user.id,
       createdBy: req.user.id
     });
@@ -233,6 +251,14 @@ const getTaskById = async (req, res) => {
 const updateTask = async (req, res) => {
   try {
     const { title, description, dueDate, priority, position } = req.body;
+    
+    // If priority is provided, validate it
+    if (priority && !['low', 'medium', 'high'].includes(priority)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Priority must be low, medium, or high'
+      });
+    }
     
     const task = await Task.findById(req.params.id);
     

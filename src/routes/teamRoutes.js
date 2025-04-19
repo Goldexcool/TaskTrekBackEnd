@@ -8,6 +8,9 @@ router.route('/')
   .post(authMiddleware.authenticateToken, teamController.createTeam)
   .get(authMiddleware.authenticateToken, teamController.getTeams);
 
+// Add this before the /:id routes
+router.get('/search', authMiddleware.authenticateToken, teamController.searchTeams);
+
 // Check if team exists (public route - no auth required)
 router.get('/exists/:teamId', teamController.checkTeamExists);
 

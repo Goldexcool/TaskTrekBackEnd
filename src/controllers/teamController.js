@@ -604,6 +604,65 @@ const getTeamMembers = async (req, res) => {
   }
 };
 
+// @desc    Search for teams
+// @route   GET /api/teams/search
+// @access  Private
+const searchTeams = async (req, res) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a search query'
+      });
+    }
+    
+    // Get user's teams first
+    const user = await User.findById(req.user.id).populate('teams');
+    const userTeamIds = user.teams.map(team => team._id);
+    
+    // Search for teams by name or description that user is a member of
+    const teams = await Team.find({
+      _id: { $in: userTeamIds },
+      $or: [
+        { name: { $regex: query, $options: 'i' } },
+        { description: { $regex: query, $options: 'i' } }
+      ]
+    }).select('name description avatar owner members createdAt')
+    .populate('owner', 'username email name avatar');
+    
+    // Format the response
+    const formattedTeams = teams.map(team => ({
+      id: team._id,
+      name: team.name,
+      description: team.description,
+      avatar: team.avatar,
+      owner: {
+        id: team.owner._id,
+        username: team.owner.username,
+        name: team.owner.name || team.owner.username,
+        avatar: team.owner.avatar
+      },
+      memberCount: team.members.length,
+      createdAt: team.createdAt,
+      isOwner: team.owner._id.toString() === req.user.id
+    }));
+    
+    res.status(200).json({
+      success: true,
+      count: formattedTeams.length,
+      data: formattedTeams
+    });
+  } catch (error) {
+    console.error('Team search error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred while searching for teams'
+    });
+  }
+};
+
 module.exports = {
   createTeam,
   getTeams,
@@ -615,5 +674,6 @@ module.exports = {
   changeRole,
   transferOwnership,
   checkTeamExists,
-  getTeamMembers
+  getTeamMembers,
+  searchTeams
 };
