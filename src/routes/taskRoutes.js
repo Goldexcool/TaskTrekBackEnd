@@ -3,6 +3,9 @@ const router = express.Router();
 const taskController = require('../controllers/taskController');
 const { authenticateToken } = require('../middleware/authMiddleware');
 
+// Add this BEFORE other routes to avoid path conflicts
+router.get('/all', authenticateToken, taskController.getAllTasks);
+
 // Task routes
 router.post('/', authenticateToken, taskController.createTask);
 router.get('/column/:columnId', authenticateToken, taskController.getTasksByColumn);

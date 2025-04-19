@@ -439,7 +439,6 @@ const moveTask = async (req, res) => {
       : null;
     
     if (boardCreatorId !== userId) {
-      // For now, allow access - you can implement team membership checks later
       console.log('User is not the board creator, allowing move for now');
     }
     
@@ -502,13 +501,169 @@ const debugTasks = async (req, res) => {
   }
 };
 
+// @desc    Get all tasks for the authenticated user
+// @route   GET /api/tasks/all
+// @access  Private
+const getAllTasks = async (req, res) => {
+  try {
+    const { 
+      priority, 
+      dueDate, 
+      overdue, 
+      completed, 
+      assignedToMe, 
+      boardId, 
+      teamId 
+    } = req.query;
+    
+    // Start with a base query
+    let query = {};
+    
+    // Find boards the user is a member of
+    let boardIds = [];
+    
+    if (boardId) {
+      // If specific board is requested
+      boardIds = [boardId];
+    } else if (teamId) {
+      // If specific team is requested
+      const boards = await Board.find({ 
+        team: teamId,
+        members: req.user.id 
+      }).select('_id');
+      boardIds = boards.map(board => board._id);
+    } else {
+      // Get all boards user has access to
+      const boards = await Board.find({ 
+        members: req.user.id 
+      }).select('_id');
+      boardIds = boards.map(board => board._id);
+    }
+    
+    // Add board condition to query
+    query.board = { $in: boardIds };
+    
+    // Apply filters
+    if (priority) {
+      query.priority = priority; // 'low', 'medium', or 'high'
+    }
+    
+    if (dueDate === 'today') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      query.dueDate = {
+        $gte: today,
+        $lt: tomorrow
+      };
+    } else if (dueDate === 'week') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const nextWeek = new Date(today);
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      
+      query.dueDate = {
+        $gte: today,
+        $lt: nextWeek
+      };
+    }
+    
+    if (overdue === 'true') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      query.dueDate = {
+        $lt: today
+      };
+      query.completed = { $ne: true }; // Not completed
+    }
+    
+    if (completed === 'true') {
+      query.completed = true;
+    } else if (completed === 'false') {
+      query.completed = { $ne: true };
+    }
+    
+    if (assignedToMe === 'true') {
+      query.assignedTo = req.user.id;
+    }
+    
+    // Perform the query with population
+    const tasks = await Task.find(query)
+      .populate({
+        path: 'column',
+        select: 'title'
+      })
+      .populate({
+        path: 'board',
+        select: 'title'
+      })
+      .populate({
+        path: 'assignedTo',
+        select: 'username email name avatar'
+      })
+      .populate({
+        path: 'createdBy',
+        select: 'username email name avatar'
+      })
+      .sort({ dueDate: 1, priority: -1 });
+    
+    // Format the tasks
+    const formattedTasks = tasks.map(task => ({
+      id: task._id,
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      dueDate: task.dueDate,
+      completed: task.completed || false,
+      board: {
+        id: task.board._id,
+        title: task.board.title
+      },
+      column: {
+        id: task.column._id,
+        title: task.column.title
+      },
+      assignedTo: task.assignedTo ? {
+        id: task.assignedTo._id,
+        username: task.assignedTo.username,
+        name: task.assignedTo.name || task.assignedTo.username,
+        avatar: task.assignedTo.avatar
+      } : null,
+      createdBy: {
+        id: task.createdBy._id,
+        username: task.createdBy.username,
+        name: task.createdBy.name || task.createdBy.username,
+        avatar: task.createdBy.avatar
+      },
+      labels: task.labels,
+      position: task.position,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt
+    }));
+    
+    res.status(200).json({
+      success: true,
+      count: formattedTasks.length,
+      data: formattedTasks
+    });
+  } catch (error) {
+    console.error('Get all tasks error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred while retrieving tasks'
+    });
+  }
+};
+
 module.exports = {
   createTask,
-  getTasks,
   getTasksByColumn,
   getTaskById,
   updateTask,
   deleteTask,
   moveTask,
-  debugTasks
+  getAllTasks  // Add this line
 };
