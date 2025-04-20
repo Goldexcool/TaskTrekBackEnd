@@ -17,6 +17,15 @@ console.log('Available mailer functions:', {
 
 // Generate access token
 const generateAccessToken = (userId, email) => {
+  if (!process.env.JWT_SECRET) {
+    console.error('JWT_SECRET is not defined!');
+    throw new Error('Server configuration error');
+  }
+  
+  console.log('Generating access token with JWT_SECRET:', 
+    process.env.JWT_SECRET.substring(0, 3) + '...[hidden]...' + 
+    process.env.JWT_SECRET.substring(process.env.JWT_SECRET.length - 3));
+  
   return jwt.sign(
     { id: userId, email },
     process.env.JWT_SECRET,
@@ -26,6 +35,15 @@ const generateAccessToken = (userId, email) => {
 
 // Generate refresh token
 const generateRefreshToken = (userId) => {
+  if (!process.env.REFRESH_TOKEN_SECRET) {
+    console.error('REFRESH_TOKEN_SECRET is not defined!');
+    throw new Error('Server configuration error');
+  }
+  
+  console.log('Generating refresh token with REFRESH_TOKEN_SECRET:', 
+    process.env.REFRESH_TOKEN_SECRET.substring(0, 3) + '...[hidden]...' + 
+    process.env.REFRESH_TOKEN_SECRET.substring(process.env.REFRESH_TOKEN_SECRET.length - 3));
+  
   return jwt.sign(
     { id: userId },
     process.env.REFRESH_TOKEN_SECRET,

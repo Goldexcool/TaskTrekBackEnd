@@ -1,28 +1,61 @@
 const express = require('express');
 const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
 const connectDB = require('./config/db');
 const app = require('./app');
 
 // Load environment variables
 dotenv.config();
 
-// Check essential environment variables
-const checkRequiredEnvVars = () => {
-  const required = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'MONGODB_URI'];
-  const missing = required.filter(key => !process.env[key]);
+// Check and set critical environment variables
+const ensureEnvVars = () => {
+  const requiredVars = {
+    JWT_SECRET: 'dev-jwt-secret-key-tasktrek-backend-2025-development-only',
+    REFRESH_TOKEN_SECRET: 'dev-refresh-token-secret-key-tasktrek-backend-2025-development-only',
+    MONGODB_URI: process.env.MONGODB_URI // Don't set a default for this one
+  };
   
-  if (missing.length > 0) {
-    console.error('🚨 Missing required environment variables:');
-    missing.forEach(key => console.error(`   - ${key}`));
-    console.error('Please check your .env file and environment configuration');
+  let missingVars = [];
+  let warnMessage = '';
+  
+  for (const [key, defaultValue] of Object.entries(requiredVars)) {
+    if (!process.env[key]) {
+      missingVars.push(key);
+      
+      if (defaultValue && key !== 'MONGODB_URI') {
+        process.env[key] = defaultValue;
+        warnMessage += `\n  - ${key} set to development default (NOT SECURE FOR PRODUCTION)`;
+      }
+    }
+  }
+  
+  if (missingVars.length > 0) {
+    console.warn(`⚠️ Missing environment variables:${warnMessage}\n`);
+    console.warn('Please create or update your .env file with these variables.');
+    
+    // Create a sample .env file if it doesn't exist
+    try {
+      const envPath = path.join(__dirname, '..', '.env');
+      if (!fs.existsSync(envPath)) {
+        const envContent = Object.entries(requiredVars)
+          .map(([key, value]) => `${key}=${key === 'MONGODB_URI' ? 'your_mongodb_connection_string' : value}`)
+          .join('\n');
+        
+        fs.writeFileSync(envPath, envContent);
+        console.log('Created sample .env file. Please update it with your actual values.');
+      }
+    } catch (err) {
+      console.error('Failed to create sample .env file:', err.message);
+    }
   } else {
     console.log('✅ All required environment variables are set');
   }
 };
 
-checkRequiredEnvVars();
+ensureEnvVars();
 
-// Connect to database
+// Connect to database and start server
 const startServer = async () => {
   try {
     await connectDB();

@@ -13,21 +13,25 @@ const authenticateToken = (req, res, next) => {
       });
     }
     
-    // Log token details for debugging
-    console.log('Token received:', token.substring(0, 10) + '...');
-    console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET is missing in environment variables!');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
     
-    // Use JWT_SECRET (same as used in token generation)
+    // Use JWT_SECRET for verification
     jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
       if (err) {
-        console.log('Token verification error:', err);
+        console.error('Token verification failed:', err.message);
         return res.status(403).json({
           success: false,
           message: 'Invalid or expired token'
         });
       }
       
-      console.log('Token successfully verified, user:', decoded.id);
+      // Set user data in request object
       req.user = decoded;
       next();
     });
@@ -35,7 +39,8 @@ const authenticateToken = (req, res, next) => {
     console.error('Authentication error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error during authentication'
+      message: 'Server error',
+      error: error.message
     });
   }
 };

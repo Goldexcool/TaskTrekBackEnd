@@ -3,6 +3,23 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+
+// Load environment variables
+dotenv.config();
+
+// Set default JWT secrets if they're not in environment variables
+// CRITICAL: These are fallbacks for development only!
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️ JWT_SECRET not found in environment, using development fallback (NOT SECURE FOR PRODUCTION)');
+  process.env.JWT_SECRET = 'dev-jwt-secret-key-tasktrek-backend-2025-development-only';
+}
+
+if (!process.env.REFRESH_TOKEN_SECRET) {
+  console.warn('⚠️ REFRESH_TOKEN_SECRET not found in environment, using development fallback (NOT SECURE FOR PRODUCTION)');
+  process.env.REFRESH_TOKEN_SECRET = 'dev-refresh-token-secret-key-tasktrek-backend-2025-development-only';
+}
+
+// Import routes after environment setup to ensure they have access to env vars
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes'); 
 const boardRoutes = require('./routes/boardRoutes');
@@ -11,8 +28,6 @@ const taskRoutes = require('./routes/taskRoutes');
 const teamRoutes = require('./routes/teamRoutes');
 const activityRoutes = require('./routes/activityRoutes'); 
 const { errorHandler } = require('./middleware/errorMiddleware');
-
-dotenv.config();
 
 const app = express();
 
