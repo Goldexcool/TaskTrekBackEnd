@@ -1,6 +1,7 @@
 const Task = require('../models/Task');
 const Column = require('../models/Column');
 const Board = require('../models/Board');
+const Team = require('../models/Team'); // Add Team model
 
 // Create task
 const createTask = async (req, res) => {
@@ -501,51 +502,125 @@ const debugTasks = async (req, res) => {
   }
 };
 
-// @desc    Get all tasks for the authenticated user
+// @desc    Get all tasks with flexible filtering options
 // @route   GET /api/tasks/all
 // @access  Private
 const getAllTasks = async (req, res) => {
   try {
+    console.log('Getting all tasks for user:', req.user.id);
+    
+    // Extract all query parameters for filtering
     const { 
       priority, 
       dueDate, 
       overdue, 
       completed, 
-      assignedToMe, 
+      assignedToMe,
+      assignedTo,
+      createdBy,
       boardId, 
-      teamId 
+      teamId,
+      search,
+      sortBy,
+      sortOrder,
+      page = 1,
+      limit = 50
     } = req.query;
     
-    // Start with a base query
+    // Start building the query
     let query = {};
     
-    // Find boards the user is a member of
+    // STEP 1: Find all teams the user belongs to
+    const userTeams = await Team.find({ 
+      'members.user': req.user.id 
+    }).select('_id');
+    
+    const teamIds = userTeams.map(team => team._id);
+    console.log(`User belongs to ${teamIds.length} teams`);
+    
+    // STEP 2: Determine which boards to include
     let boardIds = [];
     
     if (boardId) {
-      // If specific board is requested
-      boardIds = [boardId];
+      // If specific board is requested, verify the user has access to it
+      const board = await Board.findOne({
+        _id: boardId,
+        $or: [
+          { createdBy: req.user.id },
+          { team: { $in: teamIds } }
+        ]
+      });
+      
+      if (board) {
+        boardIds = [boardId];
+      } else {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have access to this board'
+        });
+      }
     } else if (teamId) {
-      // If specific team is requested
-      const boards = await Board.find({ 
-        team: teamId,
-        members: req.user.id 
-      }).select('_id');
+      // If specific team is requested, verify the user is a member
+      if (!teamIds.some(id => id.toString() === teamId.toString())) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not a member of this team'
+        });
+      }
+      
+      // Find all boards in this team
+      const boards = await Board.find({ team: teamId }).select('_id');
       boardIds = boards.map(board => board._id);
     } else {
-      // Get all boards user has access to
+      // No specific board or team specified, get all boards from all user's teams
       const boards = await Board.find({ 
-        members: req.user.id 
+        $or: [
+          { createdBy: req.user.id },
+          { team: { $in: teamIds } }
+        ]
       }).select('_id');
+      
       boardIds = boards.map(board => board._id);
     }
     
-    // Add board condition to query
-    query.board = { $in: boardIds };
+    console.log(`Found ${boardIds.length} boards accessible to the user`);
     
-    // Apply filters
+    if (boardIds.length === 0) {
+      // Early return if no boards are accessible
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        totalTasks: 0,
+        totalPages: 0,
+        currentPage: parseInt(page),
+        data: []
+      });
+    }
+    
+    // STEP 3: Get all columns from these boards
+    const columns = await Column.find({ board: { $in: boardIds } }).select('_id board');
+    const columnIds = columns.map(col => col._id);
+    
+    console.log(`Found ${columnIds.length} columns in accessible boards`);
+    
+    if (columnIds.length === 0) {
+      // Early return if no columns exist
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        totalTasks: 0,
+        totalPages: 0,
+        currentPage: parseInt(page),
+        data: []
+      });
+    }
+    
+    // STEP 4: Build the task query based on columns
+    query.column = { $in: columnIds };
+    
+    // Apply all other filters
     if (priority) {
-      query.priority = priority; // 'low', 'medium', or 'high'
+      query.priority = priority;
     }
     
     if (dueDate === 'today') {
@@ -568,6 +643,16 @@ const getAllTasks = async (req, res) => {
         $gte: today,
         $lt: nextWeek
       };
+    } else if (dueDate === 'month') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const nextMonth = new Date(today);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      
+      query.dueDate = {
+        $gte: today,
+        $lt: nextMonth
+      };
     }
     
     if (overdue === 'true') {
@@ -577,7 +662,7 @@ const getAllTasks = async (req, res) => {
       query.dueDate = {
         $lt: today
       };
-      query.completed = { $ne: true }; // Not completed
+      query.completed = { $ne: true };
     }
     
     if (completed === 'true') {
@@ -588,17 +673,51 @@ const getAllTasks = async (req, res) => {
     
     if (assignedToMe === 'true') {
       query.assignedTo = req.user.id;
+    } else if (assignedTo) {
+      query.assignedTo = assignedTo;
     }
+    
+    if (createdBy) {
+      query.createdBy = createdBy;
+    }
+    
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+    
+    // Determine sorting
+    const sortOptions = {};
+    if (sortBy) {
+      sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    } else {
+      // Default sort by creation date, newest first
+      sortOptions.createdAt = -1;
+    }
+    
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Get total count for pagination
+    const totalTasks = await Task.countDocuments(query);
+    
+    console.log(`Found ${totalTasks} total tasks matching criteria`);
     
     // Perform the query with population
     const tasks = await Task.find(query)
       .populate({
         path: 'column',
-        select: 'title'
-      })
-      .populate({
-        path: 'board',
-        select: 'title'
+        select: 'title board',
+        populate: {
+          path: 'board',
+          select: 'title backgroundColor team',
+          populate: {
+            path: 'team',
+            select: 'name avatar'
+          }
+        }
       })
       .populate({
         path: 'assignedTo',
@@ -608,45 +727,59 @@ const getAllTasks = async (req, res) => {
         path: 'createdBy',
         select: 'username email name avatar'
       })
-      .sort({ dueDate: 1, priority: -1 });
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(parseInt(limit));
     
-    // Format the tasks
+    console.log(`Retrieved ${tasks.length} tasks for current page`);
+    
+    // Format the tasks for response
     const formattedTasks = tasks.map(task => ({
       id: task._id,
       title: task.title,
-      description: task.description,
-      priority: task.priority,
+      description: task.description || '',
+      priority: task.priority || 'medium',
       dueDate: task.dueDate,
       completed: task.completed || false,
-      board: {
-        id: task.board._id,
-        title: task.board.title
-      },
       column: {
         id: task.column._id,
         title: task.column.title
       },
+      board: {
+        id: task.column.board._id,
+        title: task.column.board.title,
+        backgroundColor: task.column.board.backgroundColor
+      },
+      team: task.column.board.team ? {
+        id: task.column.board.team._id,
+        name: task.column.board.team.name,
+        avatar: task.column.board.team.avatar
+      } : null,
       assignedTo: task.assignedTo ? {
         id: task.assignedTo._id,
         username: task.assignedTo.username,
         name: task.assignedTo.name || task.assignedTo.username,
         avatar: task.assignedTo.avatar
       } : null,
-      createdBy: {
+      createdBy: task.createdBy ? {
         id: task.createdBy._id,
         username: task.createdBy.username,
         name: task.createdBy.name || task.createdBy.username,
         avatar: task.createdBy.avatar
-      },
-      labels: task.labels,
-      position: task.position,
+      } : null,
+      labels: task.labels || [],
+      position: task.position || 0,
       createdAt: task.createdAt,
       updatedAt: task.updatedAt
     }));
     
+    // Return the response
     res.status(200).json({
       success: true,
       count: formattedTasks.length,
+      totalTasks: totalTasks,
+      totalPages: Math.ceil(totalTasks / parseInt(limit)),
+      currentPage: parseInt(page),
       data: formattedTasks
     });
   } catch (error) {
@@ -665,5 +798,5 @@ module.exports = {
   updateTask,
   deleteTask,
   moveTask,
-  getAllTasks  // Add this line
+  getAllTasks
 };
