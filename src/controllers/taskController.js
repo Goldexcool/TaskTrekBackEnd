@@ -2,6 +2,7 @@ const Task = require('../models/Task');
 const Column = require('../models/Column');
 const Board = require('../models/Board');
 const Team = require('../models/Team'); // Add Team model
+const { logTaskActivity } = require('../services/activityService');
 
 // Create task
 const createTask = async (req, res) => {
@@ -12,7 +13,7 @@ const createTask = async (req, res) => {
       columnId, 
       position, 
       dueDate,
-      priority, // Add priority to destructuring
+      priority,
       labels, 
       assignedTo 
     } = req.body;
@@ -86,6 +87,17 @@ const createTask = async (req, res) => {
       assignedTo: assignedTo || req.user.id,
       createdBy: req.user.id
     });
+
+    // Log activity
+    await logTaskActivity(
+      'create_task',
+      req.user,
+      task,
+      column.board,
+      column._id,
+      `${req.user.username || 'A user'} created task "${title}"`,
+      { taskTitle: title, columnId }
+    );
     
     res.status(201).json({
       success: true,
@@ -317,6 +329,17 @@ const updateTask = async (req, res) => {
     if (position !== undefined) task.position = position;
     
     await task.save();
+
+    // Log activity
+    await logTaskActivity(
+      'update_task',
+      req.user,
+      task,
+      null, // We'll get this from the task's column
+      task.column,
+      `${req.user.username || 'A user'} updated task "${task.title}"`,
+      { updatedFields: Object.keys(req.body) }
+    );
     
     res.status(200).json({
       success: true,
@@ -390,21 +413,24 @@ const deleteTask = async (req, res) => {
 // Move a task to a different column
 const moveTask = async (req, res) => {
   try {
-    // Accept both targetColumnId and columnId for flexibility
-    const targetColumnId = req.body.targetColumnId || req.body.columnId;
-    const position = req.body.position || req.body.order; // Accept both position and order
+    const { sourceColumnId, destinationColumnId, position } = req.body;
+    const taskId = req.params.id;
     
-    console.log('Moving task', req.params.id, 'to column', targetColumnId, 'at position', position);
+    // Get source and destination column information
+    const sourceColumn = await Column.findById(sourceColumnId).select('title board');
+    const destinationColumn = await Column.findById(destinationColumnId).select('title board');
+    
+    console.log('Moving task', taskId, 'to column', destinationColumnId, 'at position', position);
     console.log('Request body:', req.body);
     
-    if (!targetColumnId) {
+    if (!destinationColumnId) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide targetColumnId or columnId'
+        message: 'Please provide destinationColumnId'
       });
     }
     
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findById(taskId);
     
     if (!task) {
       return res.status(404).json({
@@ -414,7 +440,7 @@ const moveTask = async (req, res) => {
     }
     
     // Check if the target column exists
-    const targetColumn = await Column.findById(targetColumnId);
+    const targetColumn = await Column.findById(destinationColumnId);
     
     if (!targetColumn) {
       return res.status(404).json({
@@ -444,10 +470,27 @@ const moveTask = async (req, res) => {
     }
     
     // Update task
-    task.column = targetColumnId;
+    task.column = destinationColumnId;
     if (position !== undefined) task.position = position;
     
     await task.save();
+
+    // Log activity
+    await logTaskActivity(
+      'move_task',
+      req.user,
+      task,
+      destinationColumn.board,
+      destinationColumnId,
+      `${req.user.username || 'A user'} moved task "${task.title}" from "${sourceColumn.title}" to "${destinationColumn.title}"`,
+      { 
+        sourceColumnId, 
+        sourceColumnTitle: sourceColumn.title,
+        destinationColumnId, 
+        destinationColumnTitle: destinationColumn.title,
+        position 
+      }
+    );
     
     res.status(200).json({
       success: true,

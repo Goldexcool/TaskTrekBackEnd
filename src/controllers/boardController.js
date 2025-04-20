@@ -2,6 +2,7 @@ const Board = require('../models/Board');
 const Team = require('../models/Team');
 const Column = require('../models/Column');
 const Task = require('../models/Task');
+const { logBoardActivity } = require('../services/activityService');
 
 // Create a new board
 const createBoard = async (req, res) => {
@@ -25,6 +26,15 @@ const createBoard = async (req, res) => {
       colorScheme,      
       image
     });
+    
+    // Log activity
+    await logBoardActivity(
+      'create_board',
+      req.user,
+      board,
+      `${req.user.username || 'A user'} created board "${title}"`,
+      { boardTitle: title }
+    );
     
     res.status(201).json({
       success: true,
@@ -151,6 +161,15 @@ const updateBoard = async (req, res) => {
     ).populate('team', 'name avatar')
      .populate('createdBy', 'username email name avatar');
     
+    // Log activity
+    await logBoardActivity(
+      'update_board',
+      req.user,
+      updatedBoard,
+      `${req.user.username || 'A user'} updated board "${updatedBoard.title}"`,
+      { updatedFields: Object.keys(req.body) }
+    );
+    
     res.status(200).json({
       success: true,
       data: updatedBoard
@@ -202,6 +221,15 @@ const deleteBoard = async (req, res) => {
     // Additionally, you might want to delete related columns and tasks
     const deletedColumns = await Column.deleteMany({ board: boardId });
     console.log(`Deleted ${deletedColumns.deletedCount} columns`);
+    
+    // Log activity
+    await logBoardActivity(
+      'delete_board',
+      req.user,
+      board,
+      `${req.user.username || 'A user'} deleted board "${board.title}"`,
+      { boardTitle: board.title }
+    );
     
     // Return success response
     res.status(200).json({

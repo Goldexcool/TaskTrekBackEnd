@@ -4,10 +4,12 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const authRoutes = require('./routes/authRoutes');
+const userRoutes = require('./routes/userRoutes'); // This was missing
 const boardRoutes = require('./routes/boardRoutes');
 const columnRoutes = require('./routes/columnRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const teamRoutes = require('./routes/teamRoutes');
+const activityRoutes = require('./routes/activityRoutes'); // This was missing
 const { errorHandler } = require('./middleware/errorMiddleware');
 
 dotenv.config();
@@ -54,10 +56,12 @@ app.use(cookieParser());
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/boards', boardRoutes);
 app.use('/api/columns', columnRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/activities', activityRoutes);
 
 // Error handling middleware
 app.use(errorHandler);

@@ -1,6 +1,6 @@
 const Team = require('../models/Team');
 const User = require('../models/User');
-
+const { logTeamActivity } = require('../services/activityService');
 
 const createTeam = async (req, res) => {
   try {
@@ -30,6 +30,16 @@ const createTeam = async (req, res) => {
     await User.findByIdAndUpdate(
       req.user.id,
       { $addToSet: { teams: team._id } }
+    );
+
+    // Log activity
+    await logTeamActivity(
+      'create_team',
+      req.user,
+      team,
+      null,
+      `${req.user.username || 'A user'} created team "${name}"`,
+      { teamName: name }
     );
     
     res.status(201).json({
@@ -663,6 +673,53 @@ const searchTeams = async (req, res) => {
   }
 };
 
+const inviteUser = async (req, res) => {
+  try {
+    const { email, teamId } = req.body;
+    
+    // Find team and target user
+    const team = await Team.findById(teamId);
+    const targetUser = await User.findOne({ email });
+    
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team not found'
+      });
+    }
+    
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Invite user logic...
+    
+    // Log activity
+    await logTeamActivity(
+      'invite_user',
+      req.user,
+      team,
+      targetUser,
+      `${req.user.username || 'A user'} invited ${targetUser.username || email} to team "${team.name}"`,
+      { inviteeEmail: email, teamId }
+    );
+    
+    res.status(200).json({
+      success: true,
+      message: 'User invited successfully'
+    });
+  } catch (error) {
+    console.error('Invite user error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred while inviting the user'
+    });
+  }
+};
+
 module.exports = {
   createTeam,
   getTeams,
@@ -675,5 +732,6 @@ module.exports = {
   transferOwnership,
   checkTeamExists,
   getTeamMembers,
-  searchTeams
+  searchTeams,
+  inviteUser
 };
