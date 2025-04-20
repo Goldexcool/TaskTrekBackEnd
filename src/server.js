@@ -6,6 +6,22 @@ const app = require('./app');
 // Load environment variables
 dotenv.config();
 
+// Check essential environment variables
+const checkRequiredEnvVars = () => {
+  const required = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'MONGODB_URI'];
+  const missing = required.filter(key => !process.env[key]);
+  
+  if (missing.length > 0) {
+    console.error('🚨 Missing required environment variables:');
+    missing.forEach(key => console.error(`   - ${key}`));
+    console.error('Please check your .env file and environment configuration');
+  } else {
+    console.log('✅ All required environment variables are set');
+  }
+};
+
+checkRequiredEnvVars();
+
 // Connect to database
 const startServer = async () => {
   try {

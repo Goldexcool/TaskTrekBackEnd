@@ -240,6 +240,15 @@ const refreshTokenHandler = async (req, res) => {
     });
   }
 
+  // Check if refresh token secret exists
+  if (!process.env.REFRESH_TOKEN_SECRET) {
+    console.error('REFRESH_TOKEN_SECRET is not defined in environment variables');
+    return res.status(500).json({
+      success: false,
+      message: "Server configuration error"
+    });
+  }
+
   try {
     // Verify refresh token
     const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
@@ -272,6 +281,7 @@ const refreshTokenHandler = async (req, res) => {
       refreshToken: newRefreshToken
     });
   } catch (error) {
+    console.error('Refresh token error:', error);
     return res.status(403).json({
       success: false,
       message: "Invalid refresh token",

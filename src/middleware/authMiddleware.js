@@ -13,6 +13,11 @@ const authenticateToken = (req, res, next) => {
       });
     }
     
+    // Log token details for debugging
+    console.log('Token received:', token.substring(0, 10) + '...');
+    console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
+    
+    // Use JWT_SECRET (same as used in token generation)
     jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
       if (err) {
         console.log('Token verification error:', err);
@@ -22,7 +27,7 @@ const authenticateToken = (req, res, next) => {
         });
       }
       
-      // This part was missing - it needs to set req.user
+      console.log('Token successfully verified, user:', decoded.id);
       req.user = decoded;
       next();
     });
