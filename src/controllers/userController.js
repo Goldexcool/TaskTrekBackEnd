@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { logUserActivity } = require('../services/activityService');
 
 // @desc    Search for users by email or username
 // @route   GET /api/users/search
@@ -40,10 +41,16 @@ const searchUsers = async (req, res) => {
   }
 };
 
-// Get authenticated user's profile
+/**
+ * Get authenticated user's profile
+ * @route GET /api/users/profile
+ * @access Private
+ */
 const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    console.log('Getting profile for user:', req.user.id);
+    
+    const user = await User.findById(req.user.id);
     
     if (!user) {
       return res.status(404).json({
@@ -52,6 +59,7 @@ const getProfile = async (req, res) => {
       });
     }
     
+    // The user schema already has toJSON method to handle sensitive data
     res.status(200).json({
       success: true,
       data: user
@@ -65,24 +73,70 @@ const getProfile = async (req, res) => {
   }
 };
 
-// Update user profile
+/**
+ * Update user profile
+ * @route PUT /api/users/profile
+ * @access Private
+ */
 const updateProfile = async (req, res) => {
   try {
-    const { name, username, bio, avatar } = req.body;
+    console.log('Updating profile for user:', req.user.id);
+    console.log('Update data:', req.body);
+    
+    const { 
+      name, 
+      username, 
+      bio, 
+      avatar,
+      jobTitle,
+      location,
+      website,
+      social
+    } = req.body;
+    
+    // Find the user first
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Build the update object
+    const updateData = {};
+    
+    if (name !== undefined) updateData.name = name;
+    if (username !== undefined) updateData.username = username;
+    if (bio !== undefined) updateData.bio = bio;
+    if (avatar !== undefined) updateData.avatar = avatar;
+    if (jobTitle !== undefined) updateData.jobTitle = jobTitle;
+    if (location !== undefined) updateData.location = location;
+    if (website !== undefined) updateData.website = website;
+    if (social !== undefined) updateData.social = social;
+    
+    // Add updatedAt timestamp
+    updateData.updatedAt = Date.now();
     
     const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
-      { 
-        $set: { 
-          name, 
-          username, 
-          bio, 
-          avatar,
-          updatedAt: Date.now()
-        } 
-      },
+      { $set: updateData },
       { new: true, runValidators: true }
-    ).select('-password');
+    );
+    
+    // Log the activity
+    try {
+      await logUserActivity(
+        'update_profile',
+        req.user.id,
+        `${updatedUser.name || updatedUser.username} updated their profile`,
+        { updatedFields: Object.keys(updateData) }
+      );
+    } catch (activityError) {
+      console.error('Failed to log profile update activity:', activityError);
+      // Continue execution even if activity logging fails
+    }
     
     res.status(200).json({
       success: true,
@@ -97,10 +151,17 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// Get user by ID
+/**
+ * Get user by ID
+ * @route GET /api/users/:id
+ * @access Private
+ */
 const getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('name username email avatar bio');
+    const userId = req.params.id;
+    console.log(`Getting user with ID: ${userId}`);
+    
+    const user = await User.findById(userId).select('name username email avatar bio jobTitle location');
     
     if (!user) {
       return res.status(404).json({

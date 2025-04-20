@@ -65,7 +65,25 @@ const UserSchema = new mongoose.Schema(
     teams: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Team'
-    }]
+    }],
+    // Additional user profile data
+    userData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {
+        bio: '',
+        avatar: '',
+        jobTitle: '',
+        location: '',
+        website: '',
+        social: {
+          twitter: '',
+          facebook: '',
+          instagram: '',
+          linkedin: '',
+          github: ''
+        }
+      }
+    }
   },
   { timestamps: true }
 );

@@ -4,12 +4,12 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes'); // This was missing
+const userRoutes = require('./routes/userRoutes'); 
 const boardRoutes = require('./routes/boardRoutes');
 const columnRoutes = require('./routes/columnRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const teamRoutes = require('./routes/teamRoutes');
-const activityRoutes = require('./routes/activityRoutes'); // This was missing
+const activityRoutes = require('./routes/activityRoutes'); 
 const { errorHandler } = require('./middleware/errorMiddleware');
 
 dotenv.config();
@@ -55,8 +55,8 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
+app.use('/api/auth', authRoutes);  // This is for auth routes like login/signup
+app.use('/api/users', userRoutes); // This is for user profile routes
 app.use('/api/teams', teamRoutes);
 app.use('/api/boards', boardRoutes);
 app.use('/api/columns', columnRoutes);

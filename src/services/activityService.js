@@ -1,5 +1,6 @@
 const Activity = require('../models/Activity');
 const User = require('../models/User');
+const mongoose = require('mongoose');
 
 /**
  * Create an activity record
@@ -26,19 +27,9 @@ const createActivity = async (activityData) => {
  */
 const logBoardActivity = async (actionType, user, board, description, metadata = {}) => {
   try {
-    // Ensure we have the team ID if board is an ID string
-    let teamId = null;
-    if (typeof board === 'string' || board instanceof mongoose.Types.ObjectId) {
-      const boardDoc = await Board.findById(board).select('team');
-      teamId = boardDoc?.team;
-    } else {
-      teamId = board.team;
-    }
-
     return await createActivity({
       actionType,
       user: typeof user === 'object' ? user._id || user.id : user,
-      team: teamId,
       board: typeof board === 'object' ? board._id : board,
       description,
       metadata
@@ -60,39 +51,12 @@ const logBoardActivity = async (actionType, user, board, description, metadata =
  */
 const logTaskActivity = async (actionType, user, task, board, column, description, metadata = {}) => {
   try {
-    // Ensure we have proper IDs if objects are provided
-    const taskId = typeof task === 'object' ? task._id : task;
-    const columnId = typeof column === 'object' ? column._id : column;
-    const userId = typeof user === 'object' ? user._id || user.id : user;
-    
-    // Get board and team info if not provided
-    let boardId = null;
-    let teamId = null;
-    
-    if (board) {
-      boardId = typeof board === 'object' ? board._id : board;
-      teamId = typeof board === 'object' ? board.team : null;
-    }
-    
-    // If we don't have board info but have column, get it from column
-    if (!boardId && columnId) {
-      const columnDoc = await Column.findById(columnId).select('board');
-      if (columnDoc?.board) {
-        boardId = columnDoc.board;
-        
-        // Get team from board
-        const boardDoc = await Board.findById(boardId).select('team');
-        teamId = boardDoc?.team;
-      }
-    }
-    
     return await createActivity({
       actionType,
-      user: userId,
-      team: teamId,
-      board: boardId,
-      column: columnId,
-      task: taskId,
+      user: typeof user === 'object' ? user._id || user.id : user,
+      task: typeof task === 'object' ? task._id : task,
+      board: typeof board === 'object' ? board._id : board,
+      column: typeof column === 'object' ? column._id : column,
       description,
       metadata
     });
@@ -106,7 +70,7 @@ const logTaskActivity = async (actionType, user, task, board, column, descriptio
  * @param {String} actionType - The type of action
  * @param {Object|String} user - User or user ID
  * @param {Object|String} team - Team or team ID
- * @param {Object|String} targetUser - Target user or ID (for invite/assign actions)
+ * @param {Object|String} targetUser - Target user or ID
  * @param {String} description - Human readable description
  * @param {Object} metadata - Additional data
  */
@@ -136,30 +100,11 @@ const logTeamActivity = async (actionType, user, team, targetUser, description, 
  */
 const logColumnActivity = async (actionType, user, column, board, description, metadata = {}) => {
   try {
-    // Get board if not provided
-    let boardId = null;
-    let teamId = null;
-    
-    if (board) {
-      boardId = typeof board === 'object' ? board._id : board;
-      teamId = typeof board === 'object' ? board.team : null;
-    } else if (column) {
-      const columnDoc = typeof column === 'object' ? column : await Column.findById(column).select('board');
-      boardId = typeof column === 'object' ? column.board : columnDoc?.board;
-      
-      // Get team from board
-      if (boardId) {
-        const boardDoc = await Board.findById(boardId).select('team');
-        teamId = boardDoc?.team;
-      }
-    }
-    
     return await createActivity({
       actionType,
       user: typeof user === 'object' ? user._id || user.id : user,
-      team: teamId,
-      board: boardId,
       column: typeof column === 'object' ? column._id : column,
+      board: typeof board === 'object' ? board._id : board,
       description,
       metadata
     });
@@ -168,10 +113,70 @@ const logColumnActivity = async (actionType, user, column, board, description, m
   }
 };
 
+/**
+ * Log user account related activity
+ * @param {String} actionType - The type of action
+ * @param {Object|String} user - User or user ID
+ * @param {String} description - Human readable description
+ * @param {Object} metadata - Additional data
+ */
+const logUserActivity = async (actionType, user, description, metadata = {}) => {
+  console.log('Activity logged:', { actionType, user, description, metadata });
+  // Just log for now, don't try to create in DB
+  return true;
+};
+
+/**
+ * Get user-friendly description for an activity
+ * @param {String} actionType - The action type
+ * @param {Object} actor - The user performing the action
+ * @param {Object} context - Context objects (board, task, team, etc.)
+ * @returns {String} - Human readable description
+ */
+const getActivityDescription = (actionType, actor, context) => {
+  const actorName = actor?.name || actor?.username || 'A user';
+  
+  switch (actionType) {
+    // Board actions
+    case 'create_board':
+      return `${actorName} created board "${context.board?.title || 'Untitled'}"`;
+    case 'update_board':
+      return `${actorName} updated board "${context.board?.title || 'Untitled'}"`;
+    case 'delete_board':
+      return `${actorName} deleted board "${context.board?.title || 'Untitled'}"`;
+      
+    // Column actions
+    case 'create_column':
+      return `${actorName} added column "${context.column?.title || 'Untitled'}" to board "${context.board?.title || 'Untitled'}"`;
+    case 'update_column':
+      return `${actorName} updated column "${context.column?.title || 'Untitled'}"`;
+    case 'delete_column':
+      return `${actorName} deleted column "${context.column?.title || 'Untitled'}"`;
+      
+    // Task actions
+    case 'create_task':
+      return `${actorName} created task "${context.task?.title || 'Untitled'}"`;
+    case 'update_task':
+      return `${actorName} updated task "${context.task?.title || 'Untitled'}"`;
+    case 'delete_task':
+      return `${actorName} deleted task "${context.task?.title || 'Untitled'}"`;
+    case 'move_task':
+      return `${actorName} moved task "${context.task?.title || 'Untitled'}"`;
+    case 'complete_task':
+      return `${actorName} completed task "${context.task?.title || 'Untitled'}"`;
+      
+    // Default case
+    default:
+      return `${actorName} performed ${actionType.replace(/_/g, ' ')}`;
+  }
+};
+
 module.exports = {
   createActivity,
   logBoardActivity,
   logTaskActivity,
   logTeamActivity,
-  logColumnActivity
+  logColumnActivity,
+  logUserActivity,
+  getActivityDescription
 };
