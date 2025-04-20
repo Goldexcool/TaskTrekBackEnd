@@ -4,23 +4,11 @@ const ActivitySchema = new mongoose.Schema({
   actionType: {
     type: String,
     enum: [
-      'create_board', 
-      'update_board', 
-      'delete_board',
-      'create_column', 
-      'update_column', 
-      'delete_column',
-      'create_task', 
-      'update_task', 
-      'delete_task',
-      'move_task',
-      'complete_task',
-      'assign_task',
-      'comment_task',
-      'join_team',
-      'leave_team',
-      'invite_user',
-      'add_member'
+      'create_board', 'update_board', 'delete_board',
+      'create_column', 'update_column', 'delete_column',
+      'create_task', 'update_task', 'delete_task', 'move_task',
+      'complete_task', 'assign_task', 'comment_task',
+      'join_team', 'leave_team', 'invite_user', 'add_member'
     ],
     required: true
   },

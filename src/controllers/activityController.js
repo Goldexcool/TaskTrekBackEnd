@@ -203,9 +203,9 @@ const getActivityFeed = async (req, res) => {
 };
 
 module.exports = {
+  getActivityFeed,
   getUserActivities,
   getTeamActivities,
   getBoardActivities,
-  getTaskActivities,
-  getActivityFeed
+  getTaskActivities
 };
