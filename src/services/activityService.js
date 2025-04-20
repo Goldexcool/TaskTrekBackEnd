@@ -126,13 +126,7 @@ const logUserActivity = async (actionType, user, description, metadata = {}) => 
   return true;
 };
 
-/**
- * Get user-friendly description for an activity
- * @param {String} actionType - The action type
- * @param {Object} actor - The user performing the action
- * @param {Object} context - Context objects (board, task, team, etc.)
- * @returns {String} - Human readable description
- */
+
 const getActivityDescription = (actionType, actor, context) => {
   const actorName = actor?.name || actor?.username || 'A user';
   

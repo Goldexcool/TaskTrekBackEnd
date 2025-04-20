@@ -15,13 +15,14 @@ const authenticateToken = (req, res, next) => {
     
     jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
       if (err) {
+        console.log('Token verification error:', err);
         return res.status(403).json({
           success: false,
           message: 'Invalid or expired token'
         });
       }
       
-      // This is important - it sets req.user
+      // This part was missing - it needs to set req.user
       req.user = decoded;
       next();
     });
@@ -34,6 +35,4 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-module.exports = {
-  authenticateToken
-};
+module.exports = { authenticateToken };

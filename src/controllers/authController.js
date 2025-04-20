@@ -16,11 +16,11 @@ console.log('Available mailer functions:', {
 });
 
 // Generate access token
-const generateAccessToken = (userId) => {
+const generateAccessToken = (userId, email) => {
   return jwt.sign(
-    { id: userId },
-    process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: '1d' }
+    { id: userId, email },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
   );
 };
 
@@ -73,7 +73,7 @@ const signup = async (req, res) => {
     });
     
     // Generate tokens
-    const accessToken = generateAccessToken(user._id);
+    const accessToken = generateAccessToken(user._id, user.email);
     const refreshToken = generateRefreshToken(user._id);
     
     // Send welcome email (non-blocking)
@@ -142,7 +142,7 @@ const login = async (req, res) => {
     }
 
     // Generate tokens
-    const accessToken = generateAccessToken(user._id);
+    const accessToken = generateAccessToken(user._id, user.email);
     const refreshToken = generateRefreshToken(user._id);
 
     // Store refresh token in database
@@ -201,7 +201,7 @@ const loginGold = async (req, res) => {
     console.log('Gold user credentials verified');
     
     // Generate tokens
-    const accessToken = generateAccessToken(user._id);
+    const accessToken = generateAccessToken(user._id, user.email);
     const refreshToken = generateRefreshToken(user._id);
     
     // Store refresh token
@@ -258,7 +258,7 @@ const refreshTokenHandler = async (req, res) => {
     }
 
     // Generate new tokens
-    const newAccessToken = generateAccessToken(user._id);
+    const newAccessToken = generateAccessToken(user._id, user.email);
     const newRefreshToken = generateRefreshToken(user._id);
 
     // Update refresh token in database
