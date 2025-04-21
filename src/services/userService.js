@@ -1,9 +1,6 @@
-const bcrypt = require('bcryptjs'); // Changed from bcrypt to bcryptjs
+const bcrypt = require('bcryptjs'); 
 const User = require('../models/User');
 
-/**
- * User service for consistent password handling and user operations
- */
 
 class UserService {
 
@@ -13,12 +10,7 @@ class UserService {
     return bcrypt.hash(String(password), salt);
   }
 
-  /**
-   * Verify a password against a hash
-   * @param {string} password - Plain text password
-   * @param {string} hash - Hashed password
-   * @returns {Promise<boolean>} - True if password matches hash
-   */
+
   static async verifyPassword(password, hash) {
     try {
       // Ensure both are strings
@@ -29,11 +21,7 @@ class UserService {
     }
   }
 
-  /**
-   * Create a new user
-   * @param {Object} userData - User data
-   * @returns {Promise<Object>} - Created user
-   */
+
   static async createUser(userData) {
     const { password, ...otherData } = userData;
     
@@ -47,21 +35,11 @@ class UserService {
     });
   }
 
-  /**
-   * Find user by email with password
-   * @param {string} email - User email
-   * @returns {Promise<Object>} - User object
-   */
   static async findUserByEmailWithPassword(email) {
     return User.findOne({ email }).select('+password');
   }
 
-  /**
-   * Update user password
-   * @param {string} userId - User ID
-   * @param {string} newPassword - New password
-   * @returns {Promise<Object>} - Updated user
-   */
+
   static async updatePassword(userId, newPassword) {
     const hashedPassword = await this.hashPassword(newPassword);
     

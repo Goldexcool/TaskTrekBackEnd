@@ -1,7 +1,6 @@
 const Column = require('../models/Column');
 const Board = require('../models/Board');
 
-// Create column
 const createColumn = async (req, res) => {
   try {
     const { title, boardId, position } = req.body;
@@ -33,7 +32,6 @@ const createColumn = async (req, res) => {
   }
 };
 
-// Get columns by board
 const getColumnsByBoard = async (req, res) => {
   try {
     const boardId = req.params.boardId;
@@ -59,7 +57,6 @@ const getColumnsByBoard = async (req, res) => {
   }
 };
 
-// Update column
 const updateColumn = async (req, res) => {
   try {
     const { title, position } = req.body;
@@ -91,7 +88,6 @@ const updateColumn = async (req, res) => {
   }
 };
 
-// Delete column
 const deleteColumn = async (req, res) => {
   try {
     const column = await Column.findById(req.params.id);
