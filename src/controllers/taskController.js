@@ -834,6 +834,98 @@ const getAllTasks = async (req, res) => {
   }
 };
 
+/**
+ * Reopen a completed task
+ * @route PATCH /api/tasks/:id/reopen
+ * @access Private
+ */
+const reopenTask = async (req, res) => {
+  try {
+    // Find the task
+    const task = await Task.findById(req.params.id);
+    
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Check if the task is already open
+    if (!task.completed) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task is already open'
+      });
+    }
+    
+    // Check if user has permission
+    const board = await Board.findById(task.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    const team = await Team.findById(board.team);
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team not found'
+      });
+    }
+    
+    // Check if user is in the team
+    const isTeamMember = team.members.some(
+      member => member.user.toString() === req.user.id
+    );
+    
+    if (!isTeamMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to reopen tasks on this board'
+      });
+    }
+    
+    // Update task status
+    task.completed = false;
+    task.completedAt = null;
+    task.reopenedBy = req.user.id;
+    task.reopenedAt = new Date();
+    task.updatedAt = new Date();
+    await task.save();
+    
+    // Log the activity
+    await logTaskActivity(
+      'reopen_task',
+      req.user.id,
+      task._id,
+      task.board,
+      task.column,
+      `${req.user.name || 'A user'} reopened task "${task.title}"`,
+      { reopenedAt: task.reopenedAt }
+    );
+    
+    // Get the populated task for the response
+    const updatedTask = await Task.findById(task._id)
+      .populate('assignedTo', 'name username email avatar')
+      .populate('createdBy', 'name username email avatar')
+      .populate('reopenedBy', 'name username email avatar');
+    
+    res.status(200).json({
+      success: true,
+      data: updatedTask
+    });
+  } catch (error) {
+    console.error('Error reopening task:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error reopening task'
+    });
+  }
+};
+
 module.exports = {
   createTask,
   getTasksByColumn,
@@ -841,5 +933,6 @@ module.exports = {
   updateTask,
   deleteTask,
   moveTask,
-  getAllTasks
+  getAllTasks,
+  reopenTask
 };

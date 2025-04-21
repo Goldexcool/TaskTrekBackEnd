@@ -13,5 +13,6 @@ router.get('/:id', authenticateToken, taskController.getTaskById);
 router.put('/:id', authenticateToken, taskController.updateTask);
 router.delete('/:id', authenticateToken, taskController.deleteTask);
 router.put('/:id/move', authenticateToken, taskController.moveTask);
+router.patch('/:id/reopen', authenticateToken, taskController.reopenTask);
 
 module.exports = router;

@@ -13,7 +13,7 @@ const ensureEnvVars = () => {
   const requiredVars = {
     JWT_SECRET: 'dev-jwt-secret-key-tasktrek-backend-2025-development-only',
     REFRESH_TOKEN_SECRET: 'dev-refresh-token-secret-key-tasktrek-backend-2025-development-only',
-    MONGODB_URI: process.env.MONGODB_URI // Don't set a default for this one
+    MONGODB_URI: process.env.MONGODB_URI 
   };
   
   let missingVars = [];
