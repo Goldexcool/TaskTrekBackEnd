@@ -5,6 +5,7 @@ const Team = require('../models/Team');
 const User = require('../models/User'); 
 const Activity = require('../models/Activity');
 const { logTaskActivity } = require('../services/activityService');
+const mongoose = require('mongoose');
 
 // Create task
 const createTask = async (req, res) => {
@@ -507,8 +508,6 @@ const moveTask = async (req, res) => {
   }
 };
 
-
-
 const getAllTasks = async (req, res) => {
   try {
     console.log('Getting all tasks for user:', req.user.id);
@@ -796,28 +795,32 @@ const getAllTasks = async (req, res) => {
 };
 
 /**
- * Reopen a completed task
- * @route PUT /api/tasks/:taskId/reopen
- * @access Private
+ * Reopen a task
+ * @route PUT /api/tasks/:id/reopen
  */
 const reopenTask = async (req, res) => {
   try {
-    const { taskId } = req.params;
-    const userId = req.user.id;
+    const { id } = req.params;
     
-    // Find the task with populated board and column
-    const task = await Task.findById(taskId)
-      .populate('board')
-      .populate('column');
-    
-    if (!task) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Task not found' 
+    // Validate task ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid task ID format'
       });
     }
     
-    // Check if task is already open (not completed)
+    // Find the task
+    const task = await Task.findById(id);
+    
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Check if task is already open
     if (!task.completed) {
       return res.status(400).json({
         success: false,
@@ -825,95 +828,37 @@ const reopenTask = async (req, res) => {
       });
     }
     
-    // Important: Check if board exists directly from the task object
-    // rather than searching for it separately
-    if (!task.board || !task.board._id) {
-      return res.status(404).json({
-        success: false,
-        message: 'Board not found for this task'
-      });
-    }
-    
-    const board = task.board;
-    
-    // Check if user is a member of the board's team
-    const team = await Team.findById(board.team);
-    if (!team) {
-      return res.status(404).json({
-        success: false,
-        message: 'Team not found for this board'
-      });
-    }
-    
-    // Check if user is a team member
-    const isMember = team.members.some(member => 
-      member.user.toString() === userId.toString()
-    );
-    
-    if (!isMember && board.createdBy.toString() !== userId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to reopen tasks on this board'
-      });
-    }
-    
-    // Get target column (typically the first column or a specified one)
-    let targetColumn = await Column.findOne({ 
-      board: board._id,
-      // Use the original column if available, otherwise find the first column
-      _id: task.originalColumn || { $exists: true }
-    }).sort({ position: 1 });
-    
-    if (!targetColumn) {
-      return res.status(404).json({
-        success: false,
-        message: 'No valid column found to move the reopened task to'
-      });
-    }
-    
-    // Update task
+    // Update task status
     task.completed = false;
     task.completedAt = null;
-    task.column = targetColumn._id; // Move to target column
+    task.completedBy = null;
+    task.reopenedAt = new Date();
+    task.reopenedBy = req.user.id;
     
-    // Save changes
+    // Save the updated task
     await task.save();
     
     // Create activity record
-    const activity = new Activity({
-      actionType: 'reopen_task',
-      user: userId,
-      task: task._id,
-      board: board._id,
-      column: targetColumn._id,
-      team: team._id,
-      description: `A user reopened task "${task.title}"`,
-      metadata: {
-        taskTitle: task.title,
-        reopenedAt: new Date(),
-        previousColumn: task.column ? task.column.toString() : null,
-        newColumn: targetColumn._id.toString()
-      }
+    await Activity.create({
+      user: req.user.id,
+      action: 'reopened',
+      taskId: task._id,
+      boardId: task.board,
+      columnId: task.column,
+      teamId: task.team
     });
     
-    await activity.save();
-    
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      data: {
-        task: await Task.findById(task._id)
-          .populate('column')
-          .populate('assignedTo', 'name username email avatar')
-      },
-      message: 'Task reopened successfully'
+      message: 'Task reopened successfully',
+      data: task
     });
-    
   } catch (error) {
     console.error('Error reopening task:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || 'Error reopening task',
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: 'Server error while reopening task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
