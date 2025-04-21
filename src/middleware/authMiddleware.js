@@ -45,4 +45,18 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-module.exports = { authenticateToken };
+// Make sure isAdmin middleware is defined and exported correctly
+const isAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied: Admin privileges required'
+    });
+  }
+  next();
+};
+
+module.exports = {
+  authenticateToken,
+  isAdmin
+};
