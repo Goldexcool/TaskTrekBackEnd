@@ -15,4 +15,9 @@ router.delete('/:id', authenticateToken, taskController.deleteTask);
 router.put('/:id/move', authenticateToken, taskController.moveTask);
 router.patch('/:id/reopen', authenticateToken, taskController.reopenTask);
 
+// Add these endpoints for assignment and completion
+router.patch('/:id/assign', authenticateToken, taskController.assignTask);
+router.patch('/:id/unassign', authenticateToken, taskController.unassignTask);
+router.patch('/:id/complete', authenticateToken, taskController.completeTask);
+
 module.exports = router;

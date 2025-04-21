@@ -1,7 +1,8 @@
 const Task = require('../models/Task');
 const Column = require('../models/Column');
 const Board = require('../models/Board');
-const Team = require('../models/Team'); // Add Team model
+const Team = require('../models/Team'); 
+const User = require('../models/User'); 
 const { logTaskActivity } = require('../services/activityService');
 
 // Create task
@@ -926,6 +927,297 @@ const reopenTask = async (req, res) => {
   }
 };
 
+/**
+ * Complete a task
+ * @route PATCH /api/tasks/:id/complete
+ * @access Private
+ */
+const completeTask = async (req, res) => {
+  try {
+    // Find the task
+    const task = await Task.findById(req.params.id);
+    
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Check if task is already completed
+    if (task.completed) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task is already completed'
+      });
+    }
+    
+    // Check if user has permission
+    const column = await Column.findById(task.column);
+    if (!column) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated column not found'
+      });
+    }
+    
+    const board = await Board.findById(column.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    const team = await Team.findById(board.team);
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team not found'
+      });
+    }
+    
+    // Check if user is in the team
+    const isTeamMember = team.members.some(
+      member => member.user.toString() === req.user.id
+    );
+    
+    if (!isTeamMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to complete tasks on this board'
+      });
+    }
+    
+    // Update task status
+    task.completed = true;
+    task.completedAt = new Date();
+    task.completedBy = req.user.id;
+    task.updatedAt = new Date();
+    await task.save();
+    
+    // Log the activity
+    await logTaskActivity(
+      'complete_task',
+      req.user.id,
+      task._id,
+      board._id,
+      task.column,
+      `${req.user.name || req.user.username || 'A user'} completed task "${task.title}"`,
+      { completedAt: task.completedAt }
+    );
+    
+    // Get the populated task for the response
+    const updatedTask = await Task.findById(task._id)
+      .populate('assignedTo', 'name username email avatar')
+      .populate('createdBy', 'name username email avatar')
+      .populate('completedBy', 'name username email avatar');
+    
+    res.status(200).json({
+      success: true,
+      data: updatedTask
+    });
+  } catch (error) {
+    console.error('Error completing task:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error completing task'
+    });
+  }
+};
+
+/**
+ * Assign a task to a user
+ * @route PATCH /api/tasks/:id/assign
+ * @access Private
+ */
+const assignTask = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+    
+    // Validate user existence
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Find the task
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Check if user has access to the board
+    const board = await Board.findById(task.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated board not found'
+      });
+    }
+    
+    // Check if the user making the request has permission
+    const team = await Team.findById(board.team);
+    const isMember = team.members.some(member => 
+      member.user.toString() === req.user.id && 
+      ['admin', 'member'].includes(member.role)
+    );
+    
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to assign tasks on this board'
+      });
+    }
+    
+    // Check if user being assigned is a team member
+    const isAssigneeMember = team.members.some(member => 
+      member.user.toString() === userId
+    );
+    
+    if (!isAssigneeMember) {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only assign tasks to team members'
+      });
+    }
+    
+    // Update task assignment
+    task.assignedTo = userId;
+    task.updatedAt = Date.now();
+    await task.save();
+    
+    // Log activity
+    await logTaskActivity(
+      'assign_task',
+      req.user.id,
+      task._id,
+      board._id,
+      task.column,
+      `${req.user.name || 'A user'} assigned task "${task.title}" to ${user.name || 'a team member'}`,
+      { assignedTo: userId }
+    );
+    
+    // Populate the updated task
+    const updatedTask = await Task.findById(task._id)
+      .populate('assignedTo', 'name username email avatar')
+      .populate('createdBy', 'name username email avatar');
+    
+    res.status(200).json({
+      success: true,
+      data: updatedTask
+    });
+  } catch (error) {
+    console.error('Error assigning task:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error assigning task'
+    });
+  }
+};
+
+/**
+ * Unassign a task (remove assignee)
+ * @route PATCH /api/tasks/:id/unassign
+ * @access Private
+ */
+const unassignTask = async (req, res) => {
+  try {
+    // Find the task
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Check if task is already unassigned
+    if (!task.assignedTo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task is already unassigned'
+      });
+    }
+    
+    // Check permissions
+    const board = await Board.findById(task.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    // Check if user has permission
+    const team = await Team.findById(board.team);
+    const isMember = team.members.some(member => 
+      member.user.toString() === req.user.id && 
+      ['admin', 'member'].includes(member.role)
+    );
+    
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to unassign tasks on this board'
+      });
+    }
+    
+    // Store current assignee info for activity log
+    let previousAssigneeName = 'someone';
+    if (task.assignedTo) {
+      const previousAssignee = await User.findById(task.assignedTo);
+      if (previousAssignee) {
+        previousAssigneeName = previousAssignee.name || previousAssignee.username || previousAssignee.email;
+      }
+    }
+    
+    // Update task to remove assignment
+    task.assignedTo = null;
+    task.updatedAt = Date.now();
+    await task.save();
+    
+    // Log activity
+    await logTaskActivity(
+      'unassign_task',
+      req.user.id,
+      task._id,
+      task.board,
+      task.column,
+      `${req.user.name || 'A user'} removed ${previousAssigneeName} from task "${task.title}"`,
+      {}
+    );
+    
+    // Get updated task
+    const updatedTask = await Task.findById(task._id)
+      .populate('createdBy', 'name username email avatar');
+    
+    res.status(200).json({
+      success: true,
+      data: updatedTask
+    });
+  } catch (error) {
+    console.error('Error unassigning task:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error unassigning task'
+    });
+  }
+};
+
 module.exports = {
   createTask,
   getTasksByColumn,
@@ -934,5 +1226,8 @@ module.exports = {
   deleteTask,
   moveTask,
   getAllTasks,
-  reopenTask
+  reopenTask,
+  assignTask,
+  unassignTask,
+  completeTask  
 };
