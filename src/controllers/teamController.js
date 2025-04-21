@@ -1,4 +1,6 @@
+const mongoose = require('mongoose');
 const Team = require('../models/Team');
+const Board = require('../models/Board');
 const User = require('../models/User');
 const { logTeamActivity } = require('../services/activityService');
 
@@ -110,9 +112,17 @@ const getTeamById = async (req, res) => {
   }
 };
 
+/**
+ * Update team
+ * @route PUT /api/teams/:id
+ */
 const updateTeam = async (req, res) => {
   try {
-    let team = await Team.findById(req.params.id);
+    const { id } = req.params;
+    const { name, description } = req.body;
+    
+    // Find team
+    const team = await Team.findById(id);
     
     if (!team) {
       return res.status(404).json({
@@ -121,29 +131,33 @@ const updateTeam = async (req, res) => {
       });
     }
     
-    // Check if user is the owner of the team
-    if (team.owner.toString() !== req.user.id) {
+    // Check if user has permission to update the team
+    if (team.owner.toString() !== req.user.id && 
+        !team.admins.includes(req.user.id)) {
       return res.status(403).json({
         success: false,
-        message: 'You are not authorized to update this team'
+        message: 'You do not have permission to update this team'
       });
     }
     
-    team = await Team.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    // Update team fields
+    if (name) team.name = name;
+    if (description !== undefined) team.description = description;
     
-    res.status(200).json({
+    // Save updated team
+    await team.save();
+    
+    return res.status(200).json({
       success: true,
+      message: 'Team updated successfully',
       data: team
     });
   } catch (error) {
     console.error('Update team error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || 'An error occurred while updating the team'
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -188,7 +202,6 @@ const deleteTeam = async (req, res) => {
     });
   }
 };
-
 
 const addMember = async (req, res) => {
   try {
@@ -343,7 +356,6 @@ const removeMember = async (req, res) => {
     });
   }
 };
-
 
 const changeRole = async (req, res) => {
   try {
@@ -557,7 +569,6 @@ const checkTeamExists = async (req, res) => {
   }
 };
 
-
 const getTeamMembers = async (req, res) => {
   try {
     const { id } = req.params;
@@ -720,6 +731,212 @@ const inviteUser = async (req, res) => {
   }
 };
 
+/**
+ * Add members to a team
+ * @route POST /api/teams/:id/members
+ */
+const addTeamMembers = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { members } = req.body;
+
+    // Validate input
+    if (!members || !Array.isArray(members) || members.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide at least one member email or ID'
+      });
+    }
+
+    // Find the team
+    const team = await Team.findById(id);
+
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team not found'
+      });
+    }
+
+    // Check if current user has permission to add members
+    if (team.owner.toString() !== req.user.id && 
+        !team.admins.includes(req.user.id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to add members to this team'
+      });
+    }
+
+    // Process each member
+    const results = {
+      success: [],
+      failed: []
+    };
+
+    for (const member of members) {
+      // Find user by email or ID
+      const query = mongoose.Types.ObjectId.isValid(member) 
+        ? { _id: member } 
+        : { email: member };
+        
+      const user = await User.findOne(query);
+
+      if (!user) {
+        results.failed.push({
+          value: member,
+          reason: 'User not found'
+        });
+        continue;
+      }
+
+      // Check if user is already a member
+      if (team.members.includes(user._id)) {
+        results.failed.push({
+          value: member,
+          userId: user._id,
+          reason: 'User is already a member'
+        });
+        continue;
+      }
+
+      // Add user to team
+      team.members.push(user._id);
+      
+      // Add team to user's teams if needed
+      if (user.teams && !user.teams.includes(team._id)) {
+        user.teams.push(team._id);
+        await user.save();
+      }
+
+      results.success.push({
+        userId: user._id,
+        email: user.email,
+        name: user.name || user.username
+      });
+    }
+
+    // Save team if any members were added
+    if (results.success.length > 0) {
+      await team.save();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Added ${results.success.length} members to team`,
+      results
+    });
+  } catch (error) {
+    console.error('Error adding team members:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Add members to a board
+ * @route POST /api/boards/:boardId/members
+ */
+const addBoardMembers = async (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const { members } = req.body;
+
+    // Validate input
+    if (!members || !Array.isArray(members) || members.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide at least one member email or ID'
+      });
+    }
+
+    // Find the board
+    const board = await Board.findById(boardId);
+
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+
+    // Check if current user has permission to add members
+    if (board.owner.toString() !== req.user.id && 
+        !board.members.some(m => m.userId.toString() === req.user.id && m.role === 'admin')) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to add members to this board'
+      });
+    }
+
+    // Process each member
+    const results = {
+      success: [],
+      failed: []
+    };
+
+    for (const member of members) {
+      // Find user by email or ID
+      const query = mongoose.Types.ObjectId.isValid(member) 
+        ? { _id: member } 
+        : { email: member };
+        
+      const user = await User.findOne(query);
+
+      if (!user) {
+        results.failed.push({
+          value: member,
+          reason: 'User not found'
+        });
+        continue;
+      }
+
+      // Check if user is already a member
+      if (board.members.some(m => m.userId.toString() === user._id.toString())) {
+        results.failed.push({
+          value: member,
+          userId: user._id,
+          reason: 'User is already a member'
+        });
+        continue;
+      }
+
+      // Add user to board with 'viewer' role by default
+      board.members.push({
+        userId: user._id,
+        role: 'viewer'
+      });
+
+      results.success.push({
+        userId: user._id,
+        email: user.email,
+        name: user.name || user.username,
+        role: 'viewer'
+      });
+    }
+
+    // Save board if any members were added
+    if (results.success.length > 0) {
+      await board.save();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Added ${results.success.length} members to board`,
+      results
+    });
+  } catch (error) {
+    console.error('Error adding board members:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createTeam,
   getTeams,
@@ -733,5 +950,7 @@ module.exports = {
   checkTeamExists,
   getTeamMembers,
   searchTeams,
-  inviteUser
+  inviteUser,
+  addTeamMembers,
+  addBoardMembers
 };
