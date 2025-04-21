@@ -29,7 +29,6 @@ const getTransporter = () => {
   return transporter;
 };
 
-
 // Send password reset email
 const sendPasswordResetEmail = async (email, resetToken) => {
   try {
@@ -44,30 +43,56 @@ const sendPasswordResetEmail = async (email, resetToken) => {
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
     
     const mailOptions = {
-      from: `"TaskTrek Support" <${process.env.EMAIL_USER}>`,
+      from: `"TaskTrek Security" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Password Reset Request',
       html: `
-        <div style="background: linear-gradient(135deg, #1a2036 0%, #2d3a5d 100%); color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <div style="font-size: 28px; font-weight: bold; letter-spacing: 1.2px; background: linear-gradient(90deg, #64B5F6, #7E57C2); -webkit-background-clip: text; color: transparent; display: inline-block; margin-bottom: 5px;">TaskTrek</div>
-            <div style="width: 50px; height: 4px; background: linear-gradient(90deg, #64B5F6, #7E57C2); margin: 0 auto;"></div>
-          </div>
-          
-          <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 25px; margin-bottom: 25px; backdrop-filter: blur(10px);">
-            <h1 style="margin-top: 0; color: #ffffff; font-size: 24px; font-weight: 500;">Password Reset Requested</h1>
-            <p style="color: #e0e0e0; line-height: 1.6;">We received a request to reset your password. If this wasn't you, please ignore this email. Otherwise, click the secure link below to reset your password.</p>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${resetUrl}" style="display: inline-block; padding: 14px 28px; background: linear-gradient(90deg, #64B5F6, #7E57C2); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; letter-spacing: 0.5px; transition: all 0.3s; box-shadow: 0 5px 15px rgba(0,0,0,0.2);">Reset Password</a>
+        <div style="background: #f9fafc; margin: 0; padding: 20px 0; font-family: 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif; color: #1c2540;">
+          <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.08);">
+            <!-- Header -->
+            <div style="background: linear-gradient(to right, #2e5bff, #4466f2); padding: 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-weight: 600; font-size: 24px;">
+                <span style="font-weight: 800;">Task</span>Trek
+              </h1>
+              <p style="color: rgba(255, 255, 255, 0.85); margin: 5px 0 0 0; font-size: 15px;">Enterprise Task Management</p>
             </div>
             
-            <p style="color: #e0e0e0; font-size: 14px; margin-bottom: 0;">This link will expire in 15 minutes for security reasons.</p>
-          </div>
-          
-          <div style="text-align: center; color: #a0a0a0; font-size: 14px; margin-top: 30px;">
-            <p>Secured with end-to-end encryption.</p>
-            <p>&copy; ${new Date().getFullYear()} TaskTrek. All rights reserved.</p>
+            <!-- Content -->
+            <div style="padding: 40px 30px;">
+              <div style="margin-bottom: 25px;">
+                <div style="display: inline-block; width: 60px; height: 60px; background-color: rgba(46, 91, 255, 0.1); border-radius: 50%; text-align: center; line-height: 60px;">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 15V17M6 21H18C19.1046 21 20 20.1046 20 19V13C20 11.8954 19.1046 11 18 11H6C4.89543 11 4 11.8954 4 13V19C4 20.1046 4.89543 21 6 21ZM16 11V7C16 4.79086 14.2091 3 12 3C9.79086 3 8 4.79086 8 7V11H16Z" stroke="#2e5bff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+              </div>
+              
+              <h2 style="color: #1c2540; font-size: 22px; font-weight: 600; margin-top: 0; margin-bottom: 15px;">Reset Your Password</h2>
+              <p style="font-size: 16px; line-height: 1.6; color: #4e5d78; margin-bottom: 25px;">A request has been received to change the password for your TaskTrek account. This link will be valid for the next 15 minutes.</p>
+              
+              <div style="margin: 30px 0; text-align: center;">
+                <a href="${resetUrl}" style="display: inline-block; padding: 14px 36px; background: #2e5bff; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 500; transition: all 0.2s ease;">Reset Password</a>
+              </div>
+              
+              <div style="background-color: #f7faff; border-left: 4px solid #2e5bff; padding: 18px; margin-top: 30px; border-radius: 4px;">
+                <p style="font-size: 15px; color: #4e5d78; margin: 0;">If you did not request a password change, please ignore this email or contact support if you have questions.</p>
+              </div>
+              
+              <div style="margin-top: 30px; color: #8492a6; font-size: 14px;">
+                <p>If the button doesn't work, copy and paste this URL into your browser:</p>
+                <p style="background-color: #f5f7fa; padding: 12px; border-radius: 6px; font-family: monospace; word-break: break-all; margin: 10px 0 0 0; font-size: 13px;">${resetUrl}</p>
+              </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background-color: #f5f7fa; padding: 25px 30px; text-align: center;">
+              <p style="color: #8492a6; font-size: 14px; margin: 0 0 10px 0;">© ${new Date().getFullYear()} TaskTrek. All rights reserved.</p>
+              <p style="color: #8492a6; font-size: 13px; margin: 0;">
+                <a href="#" style="color: #2e5bff; text-decoration: none; margin: 0 8px;">Terms</a>
+                <a href="#" style="color: #2e5bff; text-decoration: none; margin: 0 8px;">Privacy</a>
+                <a href="#" style="color: #2e5bff; text-decoration: none; margin: 0 8px;">Support</a>
+              </p>
+            </div>
           </div>
         </div>
       `
@@ -95,32 +120,50 @@ const sendPasswordResetConfirmationEmail = async (email) => {
     const mailOptions = {
       from: `"TaskTrek Security" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: 'Password Reset Successful ✓',
+      subject: 'Password Reset Successful',
       html: `
-        <div style="background: linear-gradient(135deg, #1a2036 0%, #2d3a5d 100%); color: #ffffff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <div style="font-size: 28px; font-weight: bold; letter-spacing: 1.2px; background: linear-gradient(90deg, #64B5F6, #7E57C2); -webkit-background-clip: text; color: transparent; display: inline-block; margin-bottom: 5px;">TaskTrek</div>
-            <div style="width: 50px; height: 4px; background: linear-gradient(90deg, #64B5F6, #7E57C2); margin: 0 auto;"></div>
-          </div>
-          
-          <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 25px; margin-bottom: 25px; backdrop-filter: blur(10px);">
-            <div style="text-align: center; margin-bottom: 20px;">
-              <div style="display: inline-block; width: 70px; height: 70px; background: rgba(41, 204, 151, 0.2); border-radius: 50%; line-height: 70px; text-align: center; margin-bottom: 15px;">
-                <span style="color: #29CC97; font-size: 32px;">✓</span>
+        <div style="background: #f9fafc; margin: 0; padding: 20px 0; font-family: 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif; color: #1c2540;">
+          <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.08);">
+            <!-- Header -->
+            <div style="background: linear-gradient(to right, #2e5bff, #4466f2); padding: 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-weight: 600; font-size: 24px;">
+                <span style="font-weight: 800;">Task</span>Trek
+              </h1>
+              <p style="color: rgba(255, 255, 255, 0.85); margin: 5px 0 0 0; font-size: 15px;">Enterprise Task Management</p>
+            </div>
+            
+            <!-- Content -->
+            <div style="padding: 40px 30px; text-align: center;">
+              <div style="margin-bottom: 30px;">
+                <div style="display: inline-block; width: 70px; height: 70px; background-color: rgba(45, 206, 137, 0.1); border-radius: 50%; text-align: center; line-height: 70px;">
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M20 6L9 17L4 12" stroke="#2dce89" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </div>
+              </div>
+              
+              <h2 style="color: #1c2540; font-size: 24px; font-weight: 600; margin-top: 0; margin-bottom: 15px;">Password Updated Successfully</h2>
+              <p style="font-size: 16px; line-height: 1.6; color: #4e5d78; margin-bottom: 25px;">Your TaskTrek account password has been changed successfully. You can now log in with your new credentials.</p>
+              
+              <div style="margin: 30px 0;">
+                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/login" style="display: inline-block; padding: 14px 36px; background: #2e5bff; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 500; transition: all 0.2s ease;">Log In</a>
+              </div>
+              
+              <div style="background-color: #fff7ed; border-left: 4px solid #ff7849; padding: 18px; margin-top: 30px; border-radius: 4px; text-align: left;">
+                <h4 style="color: #ff7849; font-size: 15px; margin-top: 0; margin-bottom: 10px; font-weight: 600;">Security Notice</h4>
+                <p style="font-size: 14px; color: #4e5d78; margin: 0;">If you did not initiate this password change, please contact our security team immediately at <a href="mailto:security@tasktrek.com" style="color: #2e5bff; font-weight: 500;">security@tasktrek.com</a></p>
               </div>
             </div>
             
-            <h1 style="margin-top: 0; color: #ffffff; font-size: 24px; font-weight: 500; text-align: center;">Password Reset Complete</h1>
-            <p style="color: #e0e0e0; line-height: 1.6; text-align: center;">Your password has been updated successfully. You can now log in with your new credentials.</p>
-            
-            <div style="margin: 25px 0; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 8px; border-left: 4px solid #29CC97;">
-              <p style="color: #e0e0e0; font-size: 14px; margin: 0;">If you did not request this change, please contact our support team immediately as your account may be compromised.</p>
+            <!-- Footer -->
+            <div style="background-color: #f5f7fa; padding: 25px 30px; text-align: center;">
+              <p style="color: #8492a6; font-size: 14px; margin: 0 0 10px 0;">© ${new Date().getFullYear()} TaskTrek. All rights reserved.</p>
+              <p style="color: #8492a6; font-size: 13px; margin: 0;">
+                <a href="#" style="color: #2e5bff; text-decoration: none; margin: 0 8px;">Terms</a>
+                <a href="#" style="color: #2e5bff; text-decoration: none; margin: 0 8px;">Privacy</a>
+                <a href="#" style="color: #2e5bff; text-decoration: none; margin: 0 8px;">Support</a>
+              </p>
             </div>
-          </div>
-          
-          <div style="text-align: center; color: #a0a0a0; font-size: 14px; margin-top: 30px;">
-            <p>Secured with end-to-end encryption.</p>
-            <p>&copy; ${new Date().getFullYear()} TaskTrek. All rights reserved.</p>
           </div>
         </div>
       `
@@ -147,77 +190,98 @@ const sendWelcomeEmail = async (user) => {
     }
     
     const mailOptions = {
-      from: `"TaskTrek" <${process.env.EMAIL_USER}>`,
+      from: `"TaskTrek Team" <${process.env.EMAIL_USER}>`,
       to: user.email,
-      subject: 'Welcome to TaskTrek! Your Productivity Journey Begins',
+      subject: 'Welcome to TaskTrek - Your Productivity Journey Begins',
       html: `
-        <div style="background: linear-gradient(135deg, #ffffff 0%; color: #000000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
-          <div style="text-align: center; margin-bottom: 30px;">
-            <div style="font-size: 32px; font-weight: bold; letter-spacing: 1.5px; background: linear-gradient(90deg, #64B5F6, #7E57C2); -webkit-background-clip: text; color: transparent; display: inline-block; margin-bottom: 5px;">TaskTrek</div>
-            <div style="width: 60px; height: 4px; background: linear-gradient(90deg, #64B5F6, #7E57C2); margin: 0 auto;"></div>
-          </div>
-          
-          <div style="text-align: center; margin: 40px 0;">
-            <div style="font-size: 22px; color: #ffffff; margin-bottom: 15px; letter-spacing: 0.5px;">Welcome to the future of productivity</div>
-            <div style="display: inline-block; padding: 10px 20px; background: rgba(126, 87, 194, 0.3); border-radius: 30px; font-size: 14px; color: #bb9df3;">
-              <span style="font-weight: 600;">Account activated</span> • ${new Date().toLocaleDateString()}
-            </div>
-          </div>
-          
-          <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 25px; margin-bottom: 25px; backdrop-filter: blur(10px);">
-            <h2 style="color: #ffffff; font-size: 20px; font-weight: 500; margin-top: 0;">Hello <span style="color: #64B5F6;">${user.username}</span>,</h2>
-            <p style="color: #e0e0e0; line-height: 1.7;">We're thrilled to have you join the TaskTrek community! You now have access to a powerful suite of tools designed to transform how you manage tasks and collaborate with your team.</p>
-            
-            <div style="margin: 30px 0;">
-              <div style="display: flex; margin-bottom: 20px;">
-                <div style="min-width: 40px; height: 40px; background: rgba(100, 181, 246, 0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-right: 15px;">
-                  <span style="color: #64B5F6; font-size: 18px;">⚡</span>
-                </div>
-                <div>
-                  <h3 style="color: #ffffff; font-size: 16px; margin: 0 0 5px 0;">Intelligent Workflows</h3>
-                  <p style="color: #e0e0e0; font-size: 14px; margin: 0; line-height: 1.5;">Create custom boards with AI-powered task organization</p>
-                </div>
-              </div>
-              
-              <div style="display: flex; margin-bottom: 20px;">
-                <div style="min-width: 40px; height: 40px; background: rgba(126, 87, 194, 0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-right: 15px;">
-                  <span style="color: #7E57C2; font-size: 18px;">🔄</span>
-                </div>
-                <div>
-                  <h3 style="color: #ffffff; font-size: 16px; margin: 0 0 5px 0;">Real-time Collaboration</h3>
-                  <p style="color: #e0e0e0; font-size: 14px; margin: 0; line-height: 1.5;">Seamlessly work with team members across any device</p>
-                </div>
-              </div>
-              
-              <div style="display: flex;">
-                <div style="min-width: 40px; height: 40px; background: rgba(83, 219, 179, 0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-right: 15px;">
-                  <span style="color: #53DBB3; font-size: 18px;">📊</span>
-                </div>
-                <div>
-                  <h3 style="color: #ffffff; font-size: 16px; margin: 0 0 5px 0;">Productivity Analytics</h3>
-                  <p style="color: #e0e0e0; font-size: 14px; margin: 0; line-height: 1.5;">Gain insights into your workflow with advanced metrics</p>
-                </div>
+        <div style="background: #f9fafc; margin: 0; padding: 20px 0; font-family: 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif; color: #1c2540;">
+          <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,0.08);">
+            <!-- Header Banner -->
+            <div style="background: linear-gradient(135deg, #2e5bff, #4466f2); height: 160px; position: relative;">
+              <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; width: 100%;">
+                <h1 style="margin: 0; color: #ffffff; font-weight: 700; font-size: 32px; letter-spacing: -0.5px;">
+                  Welcome to <span style="font-weight: 800;">TaskTrek</span>
+                </h1>
+                <p style="color: rgba(255, 255, 255, 0.9); margin: 10px 0 0 0; font-size: 16px; letter-spacing: 0.2px;">Elevate your productivity</p>
               </div>
             </div>
             
-            <div style="text-align: center; margin: 35px 0 20px;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard" style="display: inline-block; padding: 16px 32px; background: linear-gradient(90deg, #64B5F6, #7E57C2); color: white; text-decoration: none; border-radius: 8px; font-weight: 500; letter-spacing: 0.5px; transition: all 0.3s; box-shadow: 0 5px 15px rgba(0,0,0,0.2);">Launch Dashboard</a>
+            <!-- Content -->
+            <div style="padding: 40px 30px;">
+              <h2 style="color: #1c2540; font-size: 22px; font-weight: 600; margin-top: 0; margin-bottom: 15px;">Hello ${user.name || user.username},</h2>
+              <p style="font-size: 16px; line-height: 1.6; color: #4e5d78; margin-bottom: 25px;">Thank you for joining TaskTrek! Your account has been successfully created and is ready to use. We're excited to help you organize your tasks and boost your productivity.</p>
+              
+              <!-- Features Section -->
+              <div style="margin: 35px 0; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.05);">
+                <div style="background: #fbfdff; padding: 25px; border-bottom: 1px solid #f0f4f8;">
+                  <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                    <div style="min-width: 24px; margin-right: 15px;">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 5H7C5.89543 5 5 5.89543 5 7V19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19V7C19 5.89543 18.1046 5 17 5H15M9 5C9 6.10457 9.89543 7 11 7H13C14.1046 7 15 6.10457 15 5M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5M12 12H15M12 16H15M9 12H9.01M9 16H9.01" stroke="#2e5bff" stroke-width="2" stroke-linecap="round"/>
+                      </svg>
+                    </div>
+                    <h3 style="margin: 0; font-size: 17px; color: #1c2540; font-weight: 600;">Intelligent Task Management</h3>
+                  </div>
+                  <p style="margin: 0 0 0 39px; color: #4e5d78; font-size: 15px; line-height: 1.5;">Create and organize tasks with smart prioritization and AI suggestions.</p>
+                </div>
+                
+                <div style="background: #ffffff; padding: 25px; border-bottom: 1px solid #f0f4f8;">
+                  <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                    <div style="min-width: 24px; margin-right: 15px;">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M17 20H7C5.89543 20 5 19.1046 5 18V8M19 14C19 14.7956 18.6839 15.5587 18.1213 16.1213C17.5587 16.6839 16.7956 17 16 17C15.2044 17 14.4413 16.6839 13.8787 16.1213C13.3161 15.5587 13 14.7956 13 14C13 13.2044 13.3161 12.4413 13.8787 11.8787C14.4413 11.3161 15.2044 11 16 11C16.7956 11 17.5587 11.3161 18.1213 11.8787C18.6839 12.4413 19 13.2044 19 14Z" stroke="#5d45e8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M13 14H5M9 6V4M15 6V4M16 14L17 15" stroke="#5d45e8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M5 11H13M5 15H9M19 8V6C19 5.46957 18.7893 4.96086 18.4142 4.58579C18.0391 4.21071 17.5304 4 17 4H7C6.46957 4 5.96086 4.21071 5.58579 4.58579C5.21071 4.96086 5 5.46957 5 6V8" stroke="#5d45e8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <h3 style="margin: 0; font-size: 17px; color: #1c2540; font-weight: 600;">Time Management</h3>
+                  </div>
+                  <p style="margin: 0 0 0 39px; color: #4e5d78; font-size: 15px; line-height: 1.5;">Track time, set deadlines, and receive timely reminders to stay on schedule.</p>
+                </div>
+                
+                <div style="background: #fbfdff; padding: 25px;">
+                  <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                    <div style="min-width: 24px; margin-right: 15px;">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M17 21V19C17 17.9391 16.5786 16.9217 15.8284 16.1716C15.0783 15.4214 14.0609 15 13 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21M23 21V19C22.9993 18.1137 22.7044 17.2528 22.1614 16.5523C21.6184 15.8519 20.8581 15.3516 20 15.13M16 3.13C16.8604 3.35031 17.623 3.85071 18.1676 4.55232C18.7122 5.25392 19.0078 6.11683 19.0078 7.005C19.0078 7.89318 18.7122 8.75608 18.1676 9.45769C17.623 10.1593 16.8604 10.6597 16 10.88M13 7C13 9.20914 11.2091 11 9 11C6.79086 11 5 9.20914 5 7C5 4.79086 6.79086 3 9 3C11.2091 3 13 4.79086 13 7Z" stroke="#2dce89" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </div>
+                    <h3 style="margin: 0; font-size: 17px; color: #1c2540; font-weight: 600;">Team Collaboration</h3>
+                  </div>
+                  <p style="margin: 0 0 0 39px; color: #4e5d78; font-size: 15px; line-height: 1.5;">Work together seamlessly with shared workspaces and real-time updates.</p>
+                </div>
+              </div>
+              
+              <div style="margin: 35px 0; text-align: center;">
+                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard" style="display: inline-block; padding: 14px 36px; background: #2e5bff; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 500; transition: all 0.2s ease;">Get Started Now</a>
+              </div>
+              
+              <div style="background-color: #f0f7ff; border-radius: 8px; padding: 20px; margin-top: 30px;">
+                <h4 style="color: #1c2540; font-size: 16px; margin-top: 0; margin-bottom: 10px;">Need Help?</h4>
+                <p style="color: #4e5d78; font-size: 14px; margin: 0;">Check out our <a href="#" style="color: #2e5bff; text-decoration: none; font-weight: 500;">Getting Started Guide</a> or contact our support team at <a href="mailto:support@tasktrek.com" style="color: #2e5bff; text-decoration: none; font-weight: 500;">support@tasktrek.com</a></p>
+              </div>
             </div>
-          </div>
-          
-          <div style="background: rgba(255,255,255,0.03); border-radius: 12px; padding: 20px; margin-bottom: 25px;">
-            <h3 style="color: #ffffff; font-size: 16px; margin-top: 0;">Need Help Getting Started?</h3>
-            <p style="color: #e0e0e0; font-size: 14px; line-height: 1.6; margin-bottom: 0;">Check out our <a href="#" style="color: #64B5F6; text-decoration: none;">Quick Start Guide</a> or reach out to our support team at <a href="mailto:support@tasktrek.com" style="color: #64B5F6; text-decoration: none;">support@tasktrek.com</a></p>
-          </div>
-          
-          <div style="text-align: center; color: #a0a0a0; font-size: 14px; margin-top: 30px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
-            <p style="margin-bottom: 5px;">Secured with end-to-end encryption</p>
-            <p style="margin-bottom: 5px;">
-              <a href="#" style="color: #64B5F6; text-decoration: none; margin: 0 10px;">Privacy Policy</a>
-              <a href="#" style="color: #64B5F6; text-decoration: none; margin: 0 10px;">Terms of Service</a>
-              <a href="#" style="color: #64B5F6; text-decoration: none; margin: 0 10px;">Unsubscribe</a>
-            </p>
-            <p style="margin-top: 15px;">&copy; ${new Date().getFullYear()} TaskTrek. All rights reserved.</p>
+            
+            <!-- Footer -->
+            <div style="background-color: #f5f7fa; padding: 25px 30px; text-align: center;">
+              <div style="margin-bottom: 20px;">
+                <a href="#" style="display: inline-block; margin: 0 8px;">
+                  <img src="https://cdn-icons-png.flaticon.com/128/733/733579.png" width="24" height="24" alt="Twitter" style="opacity: 0.7;">
+                </a>
+                <a href="#" style="display: inline-block; margin: 0 8px;">
+                  <img src="https://cdn-icons-png.flaticon.com/128/733/733547.png" width="24" height="24" alt="Facebook" style="opacity: 0.7;">
+                </a>
+                <a href="#" style="display: inline-block; margin: 0 8px;">
+                  <img src="https://cdn-icons-png.flaticon.com/128/3670/3670147.png" width="24" height="24" alt="LinkedIn" style="opacity: 0.7;">
+                </a>
+              </div>
+              <p style="color: #8492a6; font-size: 14px; margin: 0 0 10px 0;">© ${new Date().getFullYear()} TaskTrek. All rights reserved.</p>
+              <p style="color: #8492a6; font-size: 13px; margin: 0;">
+                <a href="#" style="color: #2e5bff; text-decoration: none; margin: 0 8px;">Terms</a>
+                <a href="#" style="color: #2e5bff; text-decoration: none; margin: 0 8px;">Privacy</a>
+                <a href="#" style="color: #2e5bff; text-decoration: none; margin: 0 8px;">Preferences</a>
+              </p>
+            </div>
           </div>
         </div>
       `
@@ -232,6 +296,15 @@ const sendWelcomeEmail = async (user) => {
     return false;
   }
 };
+
+// Export all email-related functions
+const availableMailerFunctions = {
+  sendPasswordResetEmail: typeof sendPasswordResetEmail,
+  sendPasswordResetConfirmationEmail: typeof sendPasswordResetConfirmationEmail,
+  sendWelcomeEmail: typeof sendWelcomeEmail
+};
+
+console.log('Available mailer functions:', availableMailerFunctions);
 
 module.exports = {
   sendPasswordResetEmail,
