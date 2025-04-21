@@ -27,7 +27,10 @@ const ActivitySchema = new mongoose.Schema({
       // Personal task actions
       'create_personal_task', 'update_personal_task', 'delete_personal_task',
       'complete_personal_task', 'reopen_personal_task', 'assign_personal_task',
-      'unassign_personal_task', 'archive_personal_task', 'unarchive_personal_task'
+      'unassign_personal_task', 'archive_personal_task', 'unarchive_personal_task',
+      
+      // System actions
+      'system_generated'
     ],
     required: true
   },

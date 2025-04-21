@@ -6,11 +6,7 @@ const User = require('../models/User');
  */
 
 class UserService {
-  /**
-   * Hash a password securely
-   * @param {string} password - Plain text password
-   * @returns {Promise<string>} - Hashed password
-   */
+
   static async hashPassword(password) {
     // Use a higher cost factor for better security
     const salt = await bcrypt.genSalt(12);

@@ -295,10 +295,10 @@ const getActivityDescription = (actionType, actor, context) => {
 };
 
 /**
- * Get activity feed for a user including all teams they belong to
+ * Get user activity feed that includes all activities from the user's teams
  * @param {String} userId - The user ID
  * @param {Object} options - Query options (pagination, filters)
- * @returns {Promise<Array>} - Array of activity items
+ * @returns {Promise<Object>} - Activity feed with pagination
  */
 const getUserActivityFeed = async (userId, options = {}) => {
   try {
@@ -315,76 +315,137 @@ const getUserActivityFeed = async (userId, options = {}) => {
     // Calculate skip for pagination
     const skip = (page - 1) * limit;
     
-    // Get teams the user belongs to
-    const user = await User.findById(userId);
-    if (!user) {
-      throw new Error('User not found');
-    }
+    console.log('Getting activity feed for user:', userId);
     
-    // Find teams the user belongs to
-    const teams = await Team.find({
-      'members.user': userId
-    }).select('_id');
+    let query = {};
+    let activities = [];
+    let totalCount = 0;
     
-    const teamIds = teams.map(team => team._id);
-    
-    // Build the base query
-    const query = {
-      $or: [
-        // User's personal activities
-        { user: userId, visibility: 'personal' },
-        
-        // Activities in teams the user belongs to
-        { team: { $in: teamIds }, visibility: 'team' },
-        
-        // Public activities
-        { visibility: 'public' }
-      ]
-    };
-    
-    // Apply additional filters if provided
-    if (actionType) {
-      query.actionType = actionType;
-    }
-    
+    // If teamId is provided, just query for that team activities
     if (teamId) {
-      // Override team filter to show only activities from a specific team
-      query.$or = [
-        { team: teamId, visibility: { $in: ['team', 'public'] } }
-      ];
-    }
-    
-    if (boardId) {
-      query.board = boardId;
-    }
-    
-    // Date range filter
-    if (startDate || endDate) {
-      query.createdAt = {};
+      query = { team: teamId };
       
-      if (startDate) {
-        query.createdAt.$gte = new Date(startDate);
+      if (actionType) {
+        query.actionType = actionType;
       }
       
-      if (endDate) {
-        query.createdAt.$lte = new Date(endDate);
+      if (boardId) {
+        query.board = boardId;
+      }
+      
+      // Skip team membership check for direct team access
+      activities = await Activity.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .maxTimeMS(5000) // Set timeout for this query
+        .populate('user', 'name username email avatar')
+        .populate('team', 'name description')
+        .populate('board', 'title description')
+        .populate('task', 'title description');
+      
+      totalCount = await Activity.countDocuments(query).maxTimeMS(3000);
+      
+    } else {
+      // First get user's own activities 
+      query = { user: userId };
+      
+      if (actionType) {
+        query.actionType = actionType;
+      }
+      
+      if (boardId) {
+        query.board = boardId;
+      }
+      
+      // Date range filter
+      if (startDate || endDate) {
+        query.createdAt = {};
+        
+        if (startDate) {
+          query.createdAt.$gte = new Date(startDate);
+        }
+        
+        if (endDate) {
+          query.createdAt.$lte = new Date(endDate);
+        }
+      }
+      
+      activities = await Activity.find(query)
+        .sort({ createdAt: -1 })
+        .maxTimeMS(5000) // Set timeout for this query
+        .populate('user', 'name username email avatar')
+        .populate('team', 'name description')
+        .populate('board', 'title description')
+        .populate('task', 'title description');
+      
+      // Then try to get team activities if needed
+      try {
+        // Get teams with reasonable timeout
+        const teams = await Team.find({ 'members.user': userId })
+          .select('_id')
+          .maxTimeMS(5000); // 5 second timeout
+        
+        const teamIds = teams.map(team => team._id);
+        
+        if (teamIds && teamIds.length > 0) {
+          // Search for team activities
+          const teamQuery = { 
+            team: { $in: teamIds },
+            user: { $ne: userId } // Don't duplicate user's own activities
+          };
+          
+          if (actionType) {
+            teamQuery.actionType = actionType;
+          }
+          
+          if (boardId) {
+            teamQuery.board = boardId;
+          }
+          
+          // Apply date filters if provided
+          if (startDate || endDate) {
+            teamQuery.createdAt = {};
+            
+            if (startDate) {
+              teamQuery.createdAt.$gte = new Date(startDate);
+            }
+            
+            if (endDate) {
+              teamQuery.createdAt.$lte = new Date(endDate);
+            }
+          }
+          
+          // Get team activities
+          const teamActivities = await Activity.find(teamQuery)
+            .sort({ createdAt: -1 })
+            .maxTimeMS(5000) // Set timeout for this query
+            .populate('user', 'name username email avatar')
+            .populate('team', 'name description')
+            .populate('board', 'title description')
+            .populate('task', 'title description');
+          
+          // Combine activities
+          activities = [...activities, ...teamActivities]
+            .sort((a, b) => b.createdAt - a.createdAt)
+            .slice(skip, skip + limit);
+          
+          // Count team activities too
+          const teamActivitiesCount = await Activity.countDocuments(teamQuery).maxTimeMS(3000);
+          totalCount = activities.length + teamActivitiesCount;
+        } else {
+          // No teams, just count user activities
+          totalCount = activities.length;
+          activities = activities.slice(skip, skip + limit);
+        }
+      } catch (teamError) {
+        console.error('Error getting team activities:', teamError);
+        // If team query fails, just return user activities
+        console.log('Falling back to user activities only');
+        totalCount = activities.length;
+        activities = activities.slice(skip, skip + limit);
       }
     }
-    
-    // Execute the query with population
-    const activities = await Activity.find(query)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate('user', 'name username email avatar')
-      .populate('targetUser', 'name username email avatar')
-      .populate('team', 'name description')
-      .populate('board', 'title description')
-      .populate('task', 'title description')
-      .populate('personalTask', 'title description');
-    
-    // Get total count for pagination info
-    const totalCount = await Activity.countDocuments(query);
     
     return {
       activities,

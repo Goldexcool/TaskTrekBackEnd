@@ -506,49 +506,8 @@ const moveTask = async (req, res) => {
   }
 };
 
-// Debug function to check all tasks
-const debugTasks = async (req, res) => {
-  try {
-    // Get all tasks
-    const tasks = await Task.find({});
-    
-    // Get task count by column
-    const tasksByColumn = [];
-    const columns = await Column.find({});
-    
-    for (const column of columns) {
-      const count = await Task.countDocuments({ column: column._id });
-      tasksByColumn.push({
-        columnId: column._id,
-        columnTitle: column.title,
-        taskCount: count
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
-      tasksCount: tasks.length,
-      tasksByColumn,
-      tasks: tasks.map(task => ({
-        id: task._id,
-        title: task.title,
-        column: task.column,
-        priority: task.priority,
-        dueDate: task.dueDate
-      }))
-    });
-  } catch (error) {
-    console.error('Debug tasks error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
 
-// @desc    Get all tasks with flexible filtering options
-// @route   GET /api/tasks/all
-// @access  Private
+
 const getAllTasks = async (req, res) => {
   try {
     console.log('Getting all tasks for user:', req.user.id);

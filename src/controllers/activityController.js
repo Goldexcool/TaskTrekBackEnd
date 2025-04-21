@@ -2,6 +2,7 @@ const Activity = require('../models/Activity');
 const Team = require('../models/Team');
 const Board = require('../models/Board');
 const Task = require('../models/Task');
+const mongoose = require('mongoose');
 const { 
   getUserActivityFeed, 
   getBoardActivityFeed: getActivityForBoard,
@@ -325,11 +326,100 @@ const getUserActivityFeedById = async (req, res) => {
   }
 };
 
+/**
+ * Generate retroactive activities for the authenticated user
+ * @route POST /api/activities/generate-retroactive
+ * @access Private
+ */
+const generateRetroactiveActivities = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userName = req.user.name || req.user.username || 'User';
+    
+    console.log(`Starting simplified activity generation for user ${userId}`);
+    
+    // Create several basic activities without additional database lookups
+    const activities = [];
+    
+    // Check connection state before attempting database operations
+    const isConnected = mongoose.connection.readyState === 1;
+    
+    if (!isConnected) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection not available',
+        details: 'The application is currently unable to connect to the database'
+      });
+    }
+    
+    // Create a promise with timeout for the database operation
+    const createActivityWithTimeout = async (activityData) => {
+      return new Promise(async (resolve, reject) => {
+        // Set a timeout for the operation
+        const timeout = setTimeout(() => {
+          reject(new Error('Database operation timed out after 5000ms'));
+        }, 5000);
+        
+        try {
+          // Perform the database operation
+          const activity = new Activity(activityData);
+          const savedActivity = await activity.save();
+          
+          // Clear the timeout since operation completed
+          clearTimeout(timeout);
+          resolve(savedActivity);
+        } catch (error) {
+          // Clear the timeout since operation failed
+          clearTimeout(timeout);
+          reject(error);
+        }
+      });
+    };
+    
+    // Activity 1: System login
+    try {
+      const loginActivity = await createActivityWithTimeout({
+        actionType: 'system_generated',
+        user: userId,
+        description: `${userName} logged into TaskTrek`,
+        metadata: { 
+          activityType: 'login',
+          retroactive: true,
+          generatedAt: new Date(),
+          browser: req.headers['user-agent']
+        }
+      });
+      
+      activities.push(loginActivity);
+      console.log('Created login activity');
+    } catch (err) {
+      console.error('Failed to create login activity:', err);
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: `Generated ${activities.length} basic activity records`,
+      activities: activities.map(a => ({
+        id: a._id,
+        type: a.actionType,
+        description: a.description
+      }))
+    });
+  } catch (error) {
+    console.error('Error generating activities:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error generating activities'
+    });
+  }
+};
+
 module.exports = {
   getActivityFeed,
   getTeamActivityFeed,
   getBoardActivityFeed,
   getTaskActivityFeed,
   getPersonalTaskActivityFeed,
-  getUserActivityFeedById  
+  getUserActivityFeedById,
+  generateRetroactiveActivities
 };

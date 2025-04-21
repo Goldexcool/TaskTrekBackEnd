@@ -23,35 +23,12 @@ const getTransporter = () => {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS  // This should be an app password
     },
-    debug: true,
-    logger: true // Enable logging
+    logger: true 
   });
   
   return transporter;
 };
 
-// Test email connection
-const testEmailConnection = async () => {
-  try {
-    console.log('Testing email connection...');
-    
-    const transport = getTransporter();
-    if (!transport) {
-      console.error('Email transporter not configured');
-      return false;
-    }
-    
-    await transport.verify();
-    console.log('Email server connection successful!');
-    return true;
-  } catch (error) {
-    console.error('Email connection error:', error);
-    return false;
-  }
-};
-
-// Call this when your server starts
-testEmailConnection();
 
 // Send password reset email
 const sendPasswordResetEmail = async (email, resetToken) => {
@@ -260,6 +237,5 @@ module.exports = {
   sendPasswordResetEmail,
   sendPasswordResetConfirmationEmail,
   sendWelcomeEmail,
-  testEmailConnection,
   getTransporter
 };

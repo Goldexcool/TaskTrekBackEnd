@@ -70,8 +70,8 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Routes
-app.use('/api/auth', authRoutes);  // This is for auth routes like login/signup
-app.use('/api/users', userRoutes); // This is for user profile routes
+app.use('/api/auth', authRoutes);  
+app.use('/api/users', userRoutes); 
 app.use('/api/teams', teamRoutes);
 app.use('/api/boards', boardRoutes);
 app.use('/api/columns', columnRoutes);
