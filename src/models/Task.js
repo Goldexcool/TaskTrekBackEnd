@@ -12,6 +12,11 @@ const taskSchema = new mongoose.Schema({
         default: '',
         maxlength: [500, 'Description cannot be more than 500 characters']
     },
+    board: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Board',
+        required: false
+    },
     column: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Column',
