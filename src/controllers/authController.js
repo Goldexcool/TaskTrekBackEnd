@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const User = require('../models/User');
 const UserService = require('../services/userService');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 const { 
   sendPasswordResetEmail, 
   sendPasswordResetConfirmationEmail,
@@ -130,6 +131,16 @@ const signup = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    
+    // Check if MongoDB is connected before proceeding
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection unavailable, please try again later",
+        error: "DB_CONNECTION_ERROR"
+      });
+    }
+    
     console.log('Login attempt for:', email);
 
     // Find user with password
@@ -180,6 +191,16 @@ const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
+    
+    // Special handling for database timeout errors
+    if (error.message && error.message.includes('buffering timed out')) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database operation timed out, please try again',
+        error: error.message
+      });
+    }
+    
     return res.status(500).json({
       success: false,
       message: "Server error",

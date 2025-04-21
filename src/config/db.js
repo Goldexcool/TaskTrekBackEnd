@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 
+// Connection function
 const connectDB = async () => {
   try {
     console.log('Attempting to connect to MongoDB...');
@@ -23,11 +24,14 @@ const connectDB = async () => {
     } else if (error.name === 'MongoServerSelectionError') {
       console.error('Could not select a MongoDB server. The server might be down or the connection string might be incorrect.');
     }
-    
     return false;
   }
 };
 
+// Check if MongoDB is connected
+const isMongoConnected = () => {
+  return mongoose.connection.readyState === 1;
+};
 
-
-module.exports = connectDB;
+// Export both functions
+module.exports = { connectDB, isMongoConnected };

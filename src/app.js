@@ -3,15 +3,16 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+// Don't import connectDB here as it's handled in server.js
 
 // Load environment variables
 dotenv.config();
 
 // Set default JWT secrets if they're not in environment variables
 // CRITICAL: These are fallbacks for development only!
-if (!process.env.JWT_SECRET) {
+if (!process.env.ACCESS_TOKEN_SECRET) {
   console.warn('⚠️ JWT_SECRET not found in environment, using development fallback (NOT SECURE FOR PRODUCTION)');
-  process.env.JWT_SECRET = 'dev-jwt-secret-key-tasktrek-backend-2025-development-only';
+  process.env.ACCESS_TOKEN_SECRET = 'dev-jwt-secret-key-tasktrek-backend-2025-development-only';
 }
 
 if (!process.env.REFRESH_TOKEN_SECRET) {
@@ -54,8 +55,6 @@ const corsOptions = {
     } else {
       console.log('CORS blocked request from:', origin);
       callback(null, true); // Allow all origins in development mode
-      // In production, you might want to restrict this:
-      // callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -66,7 +65,6 @@ const corsOptions = {
 
 // Apply CORS middleware
 app.use(cors(corsOptions));
-app.use(express.json());
 app.use(cookieParser());
 
 // Routes

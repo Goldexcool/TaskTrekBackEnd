@@ -2,7 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
-const connectDB = require('./config/db');
+const { connectDB } = require('./config/db');
 const app = require('./app');
 
 // Load environment variables
@@ -55,37 +55,30 @@ const ensureEnvVars = () => {
 
 ensureEnvVars();
 
-// Connect to database and start server
+// Set port from environment variables or default to 3000
+const PORT = process.env.PORT || 3000;
+
+// Connect to MongoDB and start server
 const startServer = async () => {
   try {
-    await connectDB();
+    // Connect to database
+    const dbConnected = await connectDB();
     
-    // Define port with fallbacks
-    const PORT = process.env.PORT || 3000;
+    if (!dbConnected && process.env.NODE_ENV === 'production') {
+      console.error('Failed to connect to MongoDB. Exiting in production mode.');
+      process.exit(1);
+    }
     
-    // Try to start the server
-    const server = app.listen(PORT, () => {
-      console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+    // Start server
+    app.listen(PORT, () => {
+      console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
       console.log(`CORS configured to allow origins: ${process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001'}`);
     });
-    
-    // Handle unhandled errors
-    server.on('error', (error) => {
-      if (error.code === 'EADDRINUSE') {
-        console.log(`Port ${PORT} is already in use. Trying port ${PORT + 1}...`);
-        setTimeout(() => {
-          server.close();
-          server.listen(PORT + 1);
-        }, 1000);
-      } else {
-        console.error('Server error:', error);
-      }
-    });
-    
   } catch (error) {
-    console.error(`Error starting server: ${error.message}`);
+    console.error('Error starting server:', error.message);
     process.exit(1);
   }
 };
 
+// Start the server
 startServer();
