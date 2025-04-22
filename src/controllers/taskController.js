@@ -794,15 +794,13 @@ const getAllTasks = async (req, res) => {
   }
 };
 
-/**
- * Reopen a task
- * @route PUT /api/tasks/:id/reopen
- */
+
 const reopenTask = async (req, res) => {
   try {
     const { id } = req.params;
+    const { reason } = req.body; // Optional reason for reopening
     
-    // Validate task ID
+    // Validate task ID format
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -810,13 +808,30 @@ const reopenTask = async (req, res) => {
       });
     }
     
-    // Find the task
-    const task = await Task.findById(id);
+    // Find the task with populated fields for detailed logging
+    const task = await Task.findById(id)
+      .populate('board', 'name')
+      .populate('column', 'name')
+      .populate('team', 'name')
+      .populate('completedBy', 'name username');
     
     if (!task) {
       return res.status(404).json({
         success: false,
         message: 'Task not found'
+      });
+    }
+    
+    // Check user permissions (user must be task creator, assigned to the task, or have admin rights)
+    const hasPermission = 
+      task.createdBy?.toString() === req.user.id ||
+      task.assignedTo?.toString() === req.user.id ||
+      await isTeamAdmin(task.team, req.user.id);
+      
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to reopen this task'
       });
     }
     
@@ -828,30 +843,80 @@ const reopenTask = async (req, res) => {
       });
     }
     
+    // Save previous completion data for history
+    const completionHistory = {
+      completedAt: task.completedAt,
+      completedBy: task.completedBy,
+      reopenedAt: new Date(),
+      reopenedBy: req.user.id,
+      reason: reason || 'No reason provided'
+    };
+    
     // Update task status
-    task.completed = false;
-    task.completedAt = null;
-    task.completedBy = null;
-    task.reopenedAt = new Date();
-    task.reopenedBy = req.user.id;
+    const updates = {
+      completed: false,
+      completedAt: null,
+      completedBy: null,
+      reopenedAt: new Date(),
+      reopenedBy: req.user.id,
+      $push: { statusHistory: completionHistory }
+    };
     
-    // Save the updated task
-    await task.save();
+    // Optionally move task back to a specific column
+    if (req.body.columnId && mongoose.Types.ObjectId.isValid(req.body.columnId)) {
+      updates.column = req.body.columnId;
+    }
     
-    // Create activity record
+    // Update task with all changes at once
+    const updatedTask = await Task.findByIdAndUpdate(
+      id,
+      updates,
+      { new: true, runValidators: true }
+    ).populate('reopenedBy', 'name username');
+    
+    if (!updatedTask) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found after update'
+      });
+    }
+    
+    // Create activity record with detailed information
     await Activity.create({
       user: req.user.id,
       action: 'reopened',
       taskId: task._id,
-      boardId: task.board,
-      columnId: task.column,
-      teamId: task.team
+      taskTitle: task.title,
+      boardId: task.board?._id,
+      boardName: task.board?.name,
+      columnId: task.column?._id, 
+      columnName: task.column?.name,
+      teamId: task.team?._id,
+      teamName: task.team?.name,
+      metadata: { 
+        reason,
+        previousCompletedAt: task.completedAt,
+        previousCompletedBy: task.completedBy?._id,
+        previousCompletedByName: task.completedBy?.name || task.completedBy?.username
+      }
     });
+    
+    // Send notification to task stakeholders (optional)
+    if (task.assignedTo && task.assignedTo.toString() !== req.user.id) {
+      await Notification.create({
+        recipient: task.assignedTo,
+        type: 'task_reopened',
+        message: `Task "${task.title}" has been reopened`,
+        relatedTask: task._id,
+        relatedBoard: task.board?._id,
+        initiator: req.user.id
+      });
+    }
     
     return res.status(200).json({
       success: true,
       message: 'Task reopened successfully',
-      data: task
+      data: updatedTask
     });
   } catch (error) {
     console.error('Error reopening task:', error);
@@ -861,6 +926,22 @@ const reopenTask = async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
+};
+
+/**
+ * Helper function to check if a user is an admin of a team
+ * @param {ObjectId} teamId - The team ID to check
+ * @param {ObjectId} userId - The user ID to check
+ * @returns {Promise<Boolean>} - True if user is admin, false otherwise
+ */
+const isTeamAdmin = async (teamId, userId) => {
+  if (!teamId || !userId) return false;
+  
+  const team = await Team.findById(teamId);
+  if (!team) return false;
+  
+  return team.owner?.toString() === userId.toString() || 
+         team.admins?.includes(userId.toString());
 };
 
 /**
