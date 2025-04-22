@@ -798,7 +798,7 @@ const getAllTasks = async (req, res) => {
 const reopenTask = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body; // Optional reason for reopening
+    const { reason, columnId, notifyAssignees = true } = req.body; 
     
     // Validate task ID format
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -813,7 +813,8 @@ const reopenTask = async (req, res) => {
       .populate('board', 'name')
       .populate('column', 'name')
       .populate('team', 'name')
-      .populate('completedBy', 'name username');
+      .populate('completedBy', 'name username avatar')
+      .populate('assignedTo', 'name username email avatar');
     
     if (!task) {
       return res.status(404).json({
@@ -843,10 +844,28 @@ const reopenTask = async (req, res) => {
       });
     }
     
+    // Verify column ID if provided
+    if (columnId && !mongoose.Types.ObjectId.isValid(columnId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid column ID format'
+      });
+    }
+    
+    if (columnId) {
+      const column = await Column.findById(columnId);
+      if (!column) {
+        return res.status(404).json({
+          success: false,
+          message: 'Target column not found'
+        });
+      }
+    }
+    
     // Save previous completion data for history
     const completionHistory = {
       completedAt: task.completedAt,
-      completedBy: task.completedBy,
+      completedBy: task.completedBy?._id || task.completedBy,
       reopenedAt: new Date(),
       reopenedBy: req.user.id,
       reason: reason || 'No reason provided'
@@ -862,9 +881,9 @@ const reopenTask = async (req, res) => {
       $push: { statusHistory: completionHistory }
     };
     
-    // Optionally move task back to a specific column
-    if (req.body.columnId && mongoose.Types.ObjectId.isValid(req.body.columnId)) {
-      updates.column = req.body.columnId;
+    // Move task back to a specific column if provided
+    if (columnId) {
+      updates.column = columnId;
     }
     
     // Update task with all changes at once
@@ -872,7 +891,12 @@ const reopenTask = async (req, res) => {
       id,
       updates,
       { new: true, runValidators: true }
-    ).populate('reopenedBy', 'name username');
+    ).populate([
+      { path: 'reopenedBy', select: 'name username avatar' },
+      { path: 'column', select: 'name board' },
+      { path: 'assignedTo', select: 'name username email avatar' },
+      { path: 'createdBy', select: 'name username avatar' }
+    ]);
     
     if (!updatedTask) {
       return res.status(404).json({
@@ -882,35 +906,60 @@ const reopenTask = async (req, res) => {
     }
     
     // Create activity record with detailed information
-    await Activity.create({
+    const activityData = {
       user: req.user.id,
       action: 'reopened',
       taskId: task._id,
       taskTitle: task.title,
       boardId: task.board?._id,
       boardName: task.board?.name,
-      columnId: task.column?._id, 
-      columnName: task.column?.name,
+      columnId: updatedTask.column?._id || task.column?._id, 
+      columnName: updatedTask.column?.name || task.column?.name,
       teamId: task.team?._id,
       teamName: task.team?.name,
       metadata: { 
         reason,
         previousCompletedAt: task.completedAt,
         previousCompletedBy: task.completedBy?._id,
-        previousCompletedByName: task.completedBy?.name || task.completedBy?.username
+        previousCompletedByName: task.completedBy?.name || task.completedBy?.username,
+        movedToColumn: columnId ? true : false
       }
-    });
+    };
     
-    // Send notification to task stakeholders (optional)
-    if (task.assignedTo && task.assignedTo.toString() !== req.user.id) {
-      await Notification.create({
-        recipient: task.assignedTo,
-        type: 'task_reopened',
-        message: `Task "${task.title}" has been reopened`,
-        relatedTask: task._id,
-        relatedBoard: task.board?._id,
-        initiator: req.user.id
-      });
+    await Activity.create(activityData);
+    
+    // Send notifications to relevant stakeholders
+    if (notifyAssignees && task.assignedTo && task.assignedTo._id.toString() !== req.user.id) {
+      try {
+        await Notification.create({
+          recipient: task.assignedTo._id,
+          type: 'task_reopened',
+          message: `Task "${task.title}" has been reopened` + (reason ? ` - Reason: ${reason}` : ''),
+          relatedTask: task._id,
+          relatedBoard: task.board?._id,
+          initiator: req.user.id
+        });
+        
+        // You could also implement email notifications here
+        /*
+        const assignee = await User.findById(task.assignedTo._id);
+        if (assignee && assignee.notificationPreferences?.emailTaskUpdates) {
+          await sendTaskNotificationEmail(
+            assignee.email,
+            'Task Reopened',
+            `The task "${task.title}" has been reopened by ${req.user.name || req.user.username}.`,
+            {
+              taskId: task._id,
+              boardId: task.board?._id,
+              reason: reason || 'Not specified'
+            }
+          );
+        }
+        */
+      } catch (notificationError) {
+        console.error('Error sending notification:', notificationError);
+        // Continue execution even if notification fails
+      }
     }
     
     return res.status(200).json({
