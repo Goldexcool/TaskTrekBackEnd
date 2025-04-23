@@ -20,6 +20,32 @@ if (!process.env.REFRESH_TOKEN_SECRET) {
   process.env.REFRESH_TOKEN_SECRET = 'dev-refresh-token-secret-key-tasktrek-backend-2025-development-only';
 }
 
+// Get allowed origins from environment variables
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',') 
+  : ['http://localhost:3000'];
+
+// CORS Configuration
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin) || 
+        /\.tasktrek\.com$/.test(origin) || 
+        process.env.NODE_ENV === 'development') {
+      callback(null, true);
+    } else {
+      console.log(`Origin ${origin} not allowed by CORS`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
+  maxAge: 86400
+};
+
 // Import routes after environment setup to ensure they have access to env vars
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes'); 
@@ -35,33 +61,6 @@ const app = express();
 // Parse JSON bodies
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// More flexible CORS configuration
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:5174').split(',');
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman, or curl requests)
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    // Check if the origin is allowed
-    if (allowedOrigins.includes(origin) || 
-        origin.match(/\.vercel\.app$/) || 
-        origin.match(/\.netlify\.app$/) ||
-        process.env.NODE_ENV === 'development') {
-      callback(null, true);
-    } else {
-      console.log('CORS blocked request from:', origin);
-      callback(null, true); // Allow all origins in development mode
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true,
-  maxAge: 86400 // 24 hours
-};
 
 // Apply CORS middleware
 app.use(cors(corsOptions));
