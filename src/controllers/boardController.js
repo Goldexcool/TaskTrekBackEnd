@@ -1,70 +1,160 @@
+const mongoose = require('mongoose');
 const Board = require('../models/Board');
 const Team = require('../models/Team');
 const Column = require('../models/Column');
 const Task = require('../models/Task');
+const User = require('../models/User');
+const Notification = require('../models/Notification');
+const Activity = require('../models/Activity');
 const { logBoardActivity } = require('../services/activityService');
 
-// Create a new board
+/**
+ * Create a new board
+ * @route POST /api/boards
+ */
 const createBoard = async (req, res) => {
   try {
-    const { title, description, teamId, backgroundColor, colorScheme, image } = req.body;
-    
-    // Validate required fields
-    if (!title || !teamId) {
+    const { title, description, teamId, visibility = 'team' } = req.body;
+
+    if (!title) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide title and team ID'
+        message: 'Board title is required'
       });
     }
-    
+
+    // Create board
     const board = await Board.create({
       title,
       description,
-      team: teamId,
+      team: teamId || null,
+      visibility,
       createdBy: req.user.id,
-      backgroundColor,  
-      colorScheme,      
-      image
+      members: [{
+        user: req.user.id,
+        role: 'admin',
+        addedAt: new Date(),
+        addedBy: req.user.id
+      }]
     });
-    
+
     // Log activity
-    await logBoardActivity(
-      'create_board',
-      req.user,
-      board,
-      `${req.user.username || 'A user'} created board "${title}"`,
-      { boardTitle: title }
-    );
-    
-    res.status(201).json({
+    await Activity.create({
+      user: req.user.id,
+      action: 'created_board',
+      boardId: board._id,
+      teamId: teamId,
+      metadata: {
+        boardTitle: title,
+        visibility
+      }
+    });
+
+    // Create default columns
+    const defaultColumns = [
+      { name: 'To Do', order: 0 },
+      { name: 'In Progress', order: 1 },
+      { name: 'Done', order: 2 }
+    ];
+
+    for (const column of defaultColumns) {
+      await Column.create({
+        name: column.name,
+        order: column.order,
+        board: board._id,
+        createdBy: req.user.id
+      });
+    }
+
+    // Populate columns after creation
+    const populatedBoard = await Board.findById(board._id)
+      .populate('createdBy', 'name username avatar')
+      .populate({
+        path: 'members.user',
+        select: 'name username avatar email'
+      });
+
+    // If board is created in a team, notify team members via WebSocket
+    if (teamId) {
+      const team = await Team.findById(teamId).select('members admins owner');
+      
+      if (team) {
+        const teamMembers = [
+          ...(team.members || []), 
+          ...(team.admins || [])
+        ];
+        
+        if (team.owner) {
+          teamMembers.push(team.owner);
+        }
+        
+        // Remove duplicates and the creator of the board
+        const uniqueMembers = [...new Set(teamMembers
+          .filter(memberId => memberId && memberId.toString() !== req.user.id)
+          .map(memberId => memberId.toString()))];
+        
+        // Send WebSocket notifications to team members
+        const io = req.app.get('io');
+        if (io) {
+          uniqueMembers.forEach(memberId => {
+            io.to(`user:${memberId}`).emit('board:created', {
+              boardId: board._id,
+              title: board.title,
+              creator: {
+                id: req.user.id,
+                name: req.user.name || req.user.username
+              },
+              teamId
+            });
+          });
+        }
+        
+        // Create notifications for team members
+        const creator = await User.findById(req.user.id).select('name username');
+        const notifications = uniqueMembers.map(memberId => ({
+          recipient: memberId,
+          type: 'board_created',
+          message: `${creator.name || creator.username} created a new board "${title}" in your team`,
+          relatedBoard: board._id,
+          relatedTeam: teamId,
+          initiator: req.user.id,
+          read: false
+        }));
+        
+        if (notifications.length > 0) {
+          await Notification.insertMany(notifications);
+        }
+      }
+    }
+
+    return res.status(201).json({
       success: true,
-      data: board
+      message: 'Board created successfully',
+      data: populatedBoard
     });
   } catch (error) {
-    console.error('Error creating board:', error);
-    res.status(500).json({
+    console.error('Create board error:', error);
+    return res.status(500).json({
       success: false,
-      message: error.message
+      message: 'Server error while creating board',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
-// Get all boards for a user
+// Get all boards
 const getBoards = async (req, res) => {
   try {
-    console.log('Getting boards for user ID:', req.user.id);
-    
-    // Find boards created by this user or in teams they belong to
     const boards = await Board.find({
       $or: [
-        { createdBy: req.user.id }, // Boards created by the user
+        { createdBy: req.user.id },
+        { 'members.user': req.user.id }
       ]
     })
-    .populate('team', 'name')
-    .sort({ updatedAt: -1 });
-    
-    console.log(`Found ${boards.length} boards`);
-    
+      .populate('team', 'name')
+      .populate('createdBy', 'username email')
+      .sort({ updatedAt: -1 });
+
     res.status(200).json({
       success: true,
       count: boards.length,

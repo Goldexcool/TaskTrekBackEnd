@@ -2,6 +2,9 @@ const express = require('express');
 const dotenv = require('dotenv');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+const socketIo = require('socket.io');
+const jwt = require('jsonwebtoken');
 const { connectDB } = require('./config/db');
 const app = require('./app');
 
@@ -58,6 +61,71 @@ ensureEnvVars();
 // Set port from environment variables or default to 3000
 const PORT = process.env.PORT || 3000;
 
+// Create HTTP server
+const server = http.createServer(app);
+
+// Initialize Socket.io with CORS settings
+const io = socketIo(server, {
+  cors: {
+    origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000'],
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
+});
+
+// Socket.io connection handler
+const connectedUsers = new Map();
+
+io.on('connection', (socket) => {
+  console.log('New client connected:', socket.id);
+  
+  // Authenticate connection with JWT
+  socket.on('authenticate', (token) => {
+    try {
+      // Verify the token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      // Store the authenticated user's ID with this socket
+      socket.userId = decoded.id;
+      
+      // Add to connected users map
+      if (!connectedUsers.has(decoded.id)) {
+        connectedUsers.set(decoded.id, new Set());
+      }
+      connectedUsers.get(decoded.id).add(socket.id);
+      
+      // Join a room specific to this user for direct messages
+      socket.join(`user:${decoded.id}`);
+      
+      console.log(`User ${decoded.id} authenticated on socket ${socket.id}`);
+      socket.emit('authenticated');
+      
+    } catch (error) {
+      console.error('Socket authentication failed:', error);
+      socket.emit('auth_error', { message: 'Authentication failed' });
+    }
+  });
+  
+  // Handle disconnect
+  socket.on('disconnect', () => {
+    console.log('Client disconnected:', socket.id);
+    
+    if (socket.userId) {
+      // Remove socket from user's connections
+      const userSockets = connectedUsers.get(socket.userId);
+      if (userSockets) {
+        userSockets.delete(socket.id);
+        if (userSockets.size === 0) {
+          connectedUsers.delete(socket.userId);
+        }
+      }
+    }
+  });
+});
+
+// Make io available to the rest of the app
+app.set('io', io);
+
 // Connect to MongoDB and start server
 const startServer = async () => {
   try {
@@ -70,7 +138,7 @@ const startServer = async () => {
     }
     
     // Start server
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
       console.log(`CORS configured to allow origins: ${process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001'}`);
     });

@@ -3,6 +3,8 @@ const Team = require('../models/Team');
 const Board = require('../models/Board');
 const User = require('../models/User');
 const { logTeamActivity } = require('../services/activityService');
+const Activity = require('../models/Activity');
+const Notification = require('../models/Notification');
 
 const createTeam = async (req, res) => {
   try {
@@ -226,8 +228,8 @@ const addMember = async (req, res) => {
     }
 
     // Check if user is authorized to add members
-    if (team.owner.toString() !== req.user.id && 
-        !team.admins.includes(req.user.id)) {
+    if (!team.owner || (team.owner.toString() !== req.user.id && 
+        !(team.admins && team.admins.includes(req.user.id)))) {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to add members to this team'
@@ -244,15 +246,23 @@ const addMember = async (req, res) => {
       });
     }
 
-    // Check if user is already a member
-    if (team.members.includes(user._id) || 
-        team.admins.includes(user._id) || 
-        team.owner.toString() === user._id.toString()) {
+    // Check if user is already a member - SAFELY CHECK ARRAYS
+    const isMember = team.members && team.members.some(memberId => 
+      memberId.toString() === user._id.toString());
+    const isAdmin = team.admins && team.admins.some(adminId => 
+      adminId.toString() === user._id.toString());
+    const isOwner = team.owner && team.owner.toString() === user._id.toString();
+    
+    if (isMember || isAdmin || isOwner) {
       return res.status(400).json({
         success: false,
-        message: 'User is already a member of this team'
+        message: `User is already a ${isOwner ? 'owner' : isAdmin ? 'admin' : 'member'} of this team`
       });
     }
+
+    // Initialize members and admins arrays if they don't exist
+    if (!team.members) team.members = [];
+    if (!team.admins) team.admins = [];
 
     // Add user to appropriate role
     if (role === 'admin') {
@@ -263,6 +273,9 @@ const addMember = async (req, res) => {
 
     await team.save();
 
+    // Get request user details for notification
+    const requestUser = await User.findById(req.user.id).select('name username avatar');
+
     // Create activity record
     await Activity.create({
       user: req.user.id,
@@ -271,6 +284,50 @@ const addMember = async (req, res) => {
       targetUser: user._id,
       metadata: { role }
     });
+
+    // Create notification for the added user
+    const notification = await Notification.create({
+      recipient: user._id,
+      type: 'team_invitation_accepted',
+      message: `You've been added to ${team.name} as a ${role} by ${requestUser.name || requestUser.username}`,
+      relatedTeam: team._id,
+      initiator: req.user.id,
+      read: false
+    });
+
+    // Send real-time notification via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      // Format the notification for display
+      const formattedNotification = {
+        _id: notification._id,
+        type: notification.type,
+        message: notification.message,
+        relatedTeam: {
+          _id: team._id,
+          name: team.name
+        },
+        initiator: {
+          _id: requestUser._id,
+          name: requestUser.name,
+          username: requestUser.username,
+          avatar: requestUser.avatar
+        },
+        read: false,
+        createdAt: notification.createdAt
+      };
+      
+      // Emit to user's room
+      io.to(`user:${user._id}`).emit('notification', formattedNotification);
+      
+      // Emit team update to inform user about new team
+      io.to(`user:${user._id}`).emit('team:added', {
+        teamId: team._id,
+        teamName: team.name,
+        role: role,
+        addedBy: requestUser.name || requestUser.username
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -936,6 +993,55 @@ const addBoardMembers = async (req, res) => {
   }
 };
 
+/**
+ * Get all teams for the authenticated user
+ * @route GET /api/teams/me
+ * @access Private
+ */
+const getUserTeams = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Find teams where user is owner or a member
+    const teams = await Team.find({
+      $or: [
+        { owner: userId },
+        { 'members.user': userId }
+      ]
+    }).populate('owner', 'name username email avatar')
+      .populate('members.user', 'name username email avatar');
+
+    // Classify teams by role for easier frontend handling
+    const ownedTeams = teams.filter(team => team.owner._id.toString() === userId);
+    
+    const memberTeams = teams.filter(team => {
+      // Not an owner but is a member
+      if (team.owner._id.toString() === userId) return false;
+      
+      return team.members.some(member => 
+        member.user._id.toString() === userId
+      );
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        teams,
+        ownedTeams,
+        memberTeams,
+        count: teams.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user teams:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching teams',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createTeam,
   getTeams,
@@ -951,5 +1057,6 @@ module.exports = {
   searchTeams,
   inviteUser,
   addTeamMembers,
-  addBoardMembers
+  addBoardMembers,
+  getUserTeams
 };
