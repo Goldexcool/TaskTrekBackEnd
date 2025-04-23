@@ -1,23 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const taskController = require('../controllers/taskController');
-const authMiddleware = require('../middleware/authMiddleware'); // Import the whole module
+const authMiddleware = require('../middleware/authMiddleware');
 
-// Add this BEFORE other routes to avoid path conflicts
-router.get('/all', authMiddleware.authenticateToken, taskController.getAllTasks);
+// Debug what's being imported
+console.log('Task controller functions:', Object.keys(taskController));
 
-// Task routes
-router.post('/', authMiddleware.authenticateToken, taskController.createTask);
-router.get('/column/:columnId', authMiddleware.authenticateToken, taskController.getTasksByColumn);
-router.get('/:id', authMiddleware.authenticateToken, taskController.getTaskById);
-router.put('/:id', authMiddleware.authenticateToken, taskController.updateTask);
-router.delete('/:id', authMiddleware.authenticateToken, taskController.deleteTask);
-router.put('/:id/move', authMiddleware.authenticateToken, taskController.moveTask);
-router.put('/:id/reopen', authMiddleware.authenticateToken, taskController.reopenTask); // Changed this line
+// Define routes with direct access to controller functions
+const getTaskByIdHandler = taskController.getTaskById;
+const updateTaskHandler = taskController.updateTask;
+const moveTaskHandler = taskController.moveTask;
+const deleteTaskHandler = taskController.deleteTask;
 
-// Add these endpoints for assignment and completion
-router.patch('/:id/assign', authMiddleware.authenticateToken, taskController.assignTask);
-router.patch('/:id/unassign', authMiddleware.authenticateToken, taskController.unassignTask);
-router.patch('/:id/complete', authMiddleware.authenticateToken, taskController.completeTask);
+// Use the handler variables to avoid potential undefined issues
+router.get('/:id', authMiddleware.authenticateToken, getTaskByIdHandler);
+router.patch('/:id', authMiddleware.authenticateToken, updateTaskHandler);
+router.patch('/:id/move', authMiddleware.authenticateToken, moveTaskHandler);
+router.delete('/:id', authMiddleware.authenticateToken, deleteTaskHandler);
 
 module.exports = router;

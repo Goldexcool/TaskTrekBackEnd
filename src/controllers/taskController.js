@@ -5,23 +5,29 @@ const Team = require('../models/Team');
 const User = require('../models/User'); 
 const Activity = require('../models/Activity');
 const Notification = require('../models/Notification');
-const { logTaskActivity } = require('../services/activityService');
 const mongoose = require('mongoose');
 
-const getBoardPermissionLevel = async (board, userId) => {
+/**
+ * Check if a user has permission to access a board
+ */
+const checkBoardPermission = async (board, userId) => {
   // Board creator has admin privileges
   if (board.createdBy && board.createdBy.toString() === userId) {
-    return 'admin';
+    return true;
   }
   
-  // Check board member role
+  // Check if user is a board member (any role)
   if (board.members && Array.isArray(board.members)) {
-    const memberEntry = board.members.find(member => 
-      member.user && member.user.toString() === userId
+    const isMember = board.members.some(member => 
+      member.user && (
+        typeof member.user === 'string' 
+          ? member.user === userId
+          : member.user.toString() === userId
+      )
     );
     
-    if (memberEntry && memberEntry.role) {
-      return memberEntry.role; // 'admin', 'editor', or 'viewer'
+    if (isMember) {
+      return true;
     }
   }
   
@@ -31,29 +37,32 @@ const getBoardPermissionLevel = async (board, userId) => {
     if (team) {
       // Team owner has admin privileges
       if (team.owner && team.owner.toString() === userId) {
-        return 'admin';
+        return true;
       }
       
       // Team admins have admin privileges on all team boards
       if (team.admins && team.admins.some(adminId => adminId.toString() === userId)) {
-        return 'admin';
+        return true;
       }
       
-      // Team members have at least viewer access
+      // Team members have access
       if (team.members && team.members.some(memberId => 
         typeof memberId === 'object' 
           ? memberId.user && memberId.user.toString() === userId
           : memberId.toString() === userId
       )) {
-        return 'viewer';
+        return true;
       }
     }
   }
   
   // No permission
-  return null;
+  return false;
 };
 
+/**
+ * Create a new task
+ */
 const createTask = async (req, res) => {
   try {
     const { boardId, columnId } = req.params;
@@ -68,9 +77,7 @@ const createTask = async (req, res) => {
     }
 
     // Check if board and column exist
-    const board = await Board.findById(boardId)
-      .populate('members.user', 'name username');
-      
+    const board = await Board.findById(boardId);
     if (!board) {
       return res.status(404).json({
         success: false,
@@ -87,13 +94,11 @@ const createTask = async (req, res) => {
     }
 
     // Check permission
-    const permission = await getBoardPermissionLevel(board, req.user.id);
-    
-    // Tasks can be created by admins and editors, but not viewers
-    if (!permission || permission === 'viewer') {
+    const hasPermission = await checkBoardPermission(board, req.user.id);
+    if (!hasPermission) {
       return res.status(403).json({
         success: false,
-        message: 'You need editor or admin permissions to create tasks'
+        message: 'You do not have permission to create tasks in this board'
       });
     }
 
@@ -138,74 +143,6 @@ const createTask = async (req, res) => {
       }
     });
 
-    // Create notification for assigned user
-    if (assignedTo && assignedTo !== req.user.id) {
-      const notification = await Notification.create({
-        recipient: assignedTo,
-        type: 'task_assigned',
-        message: `You were assigned to task "${title}"`,
-        relatedTask: task._id,
-        relatedBoard: boardId,
-        relatedTeam: board.team,
-        initiator: req.user.id,
-        read: false
-      });
-
-      // Send WebSocket notification to assigned user
-      const io = req.app.get('io');
-      if (io) {
-        io.to(`user:${assignedTo}`).emit('notification', {
-          _id: notification._id,
-          type: notification.type,
-          message: notification.message,
-          relatedTask: task._id,
-          relatedBoard: boardId,
-          read: false,
-          createdAt: notification.createdAt
-        });
-
-        io.to(`user:${assignedTo}`).emit('task:assigned', {
-          taskId: task._id,
-          boardId,
-          title: task.title,
-          assigner: {
-            id: req.user.id,
-            name: req.user.name || req.user.username
-          }
-        });
-      }
-    }
-
-    // Notify all board members about new task
-    const boardMembers = board.members.map(m => m.user.toString()).filter(id => id !== req.user.id);
-    const io = req.app.get('io');
-    
-    if (io && boardMembers.length > 0) {
-      boardMembers.forEach(memberId => {
-        io.to(`user:${memberId}`).emit('task:created', {
-          boardId,
-          columnId,
-          task: {
-            _id: task._id,
-            title: task.title,
-            priority: task.priority,
-            assignedTo: task.assignedTo ? {
-              _id: populatedTask.assignedTo?._id,
-              name: populatedTask.assignedTo?.name,
-              username: populatedTask.assignedTo?.username,
-              avatar: populatedTask.assignedTo?.avatar
-            } : null,
-            createdBy: {
-              _id: req.user.id,
-              name: req.user.name || req.user.username
-            },
-            order: task.order,
-            createdAt: task.createdAt
-          }
-        });
-      });
-    }
-
     return res.status(201).json({
       success: true,
       message: 'Task created successfully',
@@ -222,8 +159,68 @@ const createTask = async (req, res) => {
 };
 
 /**
+ * Get task by ID
+ */
+const getTaskById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Validate MongoDB ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid task ID format'
+      });
+    }
+
+    // Find task and populate related fields
+    const task = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('board', 'title')
+      .populate('column', 'name');
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+
+    // Get the board to check permissions
+    const board = await Board.findById(task.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated board not found'
+      });
+    }
+
+    // Check user permission
+    const hasPermission = await checkBoardPermission(board, req.user.id);
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to access this task'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: task
+    });
+  } catch (error) {
+    console.error('Get task by ID error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
  * Move a task between columns or change order
- * @route PATCH /api/tasks/:id/move
  */
 const moveTask = async (req, res) => {
   try {
@@ -247,9 +244,7 @@ const moveTask = async (req, res) => {
     }
 
     // Get the board to check permissions
-    const board = await Board.findById(task.board)
-      .populate('members.user', 'name username');
-      
+    const board = await Board.findById(task.board);
     if (!board) {
       return res.status(404).json({
         success: false,
@@ -258,17 +253,15 @@ const moveTask = async (req, res) => {
     }
 
     // Check user permission
-    const permission = await getBoardPermissionLevel(board, req.user.id);
-    
-    // Tasks can be moved by admins and editors, but not viewers
-    if (!permission || permission === 'viewer') {
+    const hasPermission = await checkBoardPermission(board, req.user.id);
+    if (!hasPermission) {
       return res.status(403).json({
         success: false,
-        message: 'You need editor or admin permissions to move tasks'
+        message: 'You do not have permission to move tasks in this board'
       });
     }
 
-    // Store original values for activity log and WebSocket
+    // Store original values for activity log
     const originalColumnId = task.column;
     const originalOrder = task.order;
 
@@ -316,28 +309,6 @@ const moveTask = async (req, res) => {
       }
     });
 
-    // Notify all board members about task move via WebSocket
-    const io = req.app.get('io');
-    const memberIds = board.members
-      .map(member => member.user.toString())
-      .filter(id => id !== req.user.id); // Don't notify mover
-
-    if (io && memberIds.length > 0) {
-      memberIds.forEach(memberId => {
-        io.to(`user:${memberId}`).emit('task:moved', {
-          taskId: task._id,
-          boardId: board._id,
-          fromColumnId: originalColumnId,
-          toColumnId: destinationColumnId || task.column,
-          order: task.order,
-          mover: {
-            id: req.user.id,
-            name: req.user.name || req.user.username
-          }
-        });
-      });
-    }
-
     return res.status(200).json({
       success: true,
       message: 'Task moved successfully',
@@ -353,7 +324,162 @@ const moveTask = async (req, res) => {
   }
 };
 
+/**
+ * Update task details
+ */
+const updateTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, priority, dueDate, assignedTo, status } = req.body;
+    
+    // Find the task
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Get the board to check permissions
+    const board = await Board.findById(task.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated board not found'
+      });
+    }
+    
+    // Check user permission
+    const hasPermission = await checkBoardPermission(board, req.user.id);
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to update this task'
+      });
+    }
+    
+    // Store original values for activity and notifications
+    const originalTitle = task.title;
+    const originalAssignedTo = task.assignedTo ? task.assignedTo.toString() : null;
+    
+    // Update task fields
+    if (title) task.title = title;
+    if (description !== undefined) task.description = description;
+    if (priority) task.priority = priority;
+    if (dueDate !== undefined) task.dueDate = dueDate;
+    if (assignedTo !== undefined) task.assignedTo = assignedTo || null;
+    if (status !== undefined) task.status = status;
+    
+    task.updatedAt = Date.now();
+    await task.save();
+    
+    // Log activity
+    await Activity.create({
+      user: req.user.id,
+      action: 'updated_task',
+      taskId: task._id,
+      boardId: task.board,
+      columnId: task.column,
+      metadata: {
+        taskTitle: task.title,
+        changes: {
+          title: title !== originalTitle ? { from: originalTitle, to: title } : undefined,
+          assignedTo: assignedTo !== originalAssignedTo ? { from: originalAssignedTo, to: assignedTo } : undefined,
+          // Add other changed fields as needed
+        }
+      }
+    });
+    
+    // Return updated task
+    const updatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email');
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task updated successfully',
+      data: updatedTask
+    });
+  } catch (error) {
+    console.error('Update task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while updating task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Delete a task
+ */
+const deleteTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Find the task
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Get the board to check permissions
+    const board = await Board.findById(task.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated board not found'
+      });
+    }
+    
+    // Check user permission
+    const hasPermission = await checkBoardPermission(board, req.user.id);
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to delete this task'
+      });
+    }
+    
+    // Delete the task
+    await task.deleteOne();
+    
+    // Log activity
+    await Activity.create({
+      user: req.user.id,
+      action: 'deleted_task',
+      boardId: task.board,
+      columnId: task.column,
+      teamId: board.team,
+      metadata: { 
+        taskTitle: task.title,
+        taskId: task._id.toString()
+      }
+    });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while deleting task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// IMPORTANT: Export all controllers used in routes
 module.exports = {
   createTask,
-  moveTask
+  getTaskById,
+  moveTask,
+  updateTask,
+  deleteTask
 };

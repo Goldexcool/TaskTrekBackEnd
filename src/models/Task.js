@@ -1,68 +1,70 @@
 const mongoose = require('mongoose');
 
-const taskSchema = new mongoose.Schema({
-    title: {
-        type: String,
-        required: [true, 'Please add a task title'],
-        trim: true,
-        maxlength: [100, 'Title cannot be more than 100 characters']
-    },
-    description: {
-        type: String,
-        default: '',
-        maxlength: [500, 'Description cannot be more than 500 characters']
-    },
-    board: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Board',
-        required: false
-    },
-    column: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Column',
-        required: true
-    },
-    order: {
-        type: Number,
-        default: 0
-    },
-    position: {
-        type: Number,
-        required: true
-    },
-    dueDate: {
-        type: Date
-    },
-    priority: {
-        type: String,
-        enum: ['low', 'medium', 'high'],
-        default: 'medium'
-    },
-    createdBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-    },
-    // Completion fields
-    completed: {
-        type: Boolean,
-        default: false
-    },
-    completedAt: {
-        type: Date
-    },
-    completedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-    },
-    // Reopening fields
-    reopenedAt: {
-        type: Date
-    },
-    reopenedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-    }
-}, { timestamps: true });
+const TaskSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    default: ''
+  },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high'],
+    default: 'medium'
+  },
+  status: {
+    type: String,
+    enum: ['todo', 'in_progress', 'done'],
+    default: 'todo'
+  },
+  dueDate: {
+    type: Date
+  },
+  order: {
+    type: Number,
+    required: true
+  },
+  board: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Board',
+    required: true
+  },
+  column: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Column',
+    required: true
+  },
+  team: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Team'
+  },
+  assignedTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  timestamps: true
+});
 
-module.exports = mongoose.model('Task', taskSchema);
+// Indexes for faster queries
+TaskSchema.index({ board: 1 });
+TaskSchema.index({ column: 1, order: 1 });
+TaskSchema.index({ assignedTo: 1 });
+
+module.exports = mongoose.model('Task', TaskSchema);
