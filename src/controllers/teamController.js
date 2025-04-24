@@ -6,55 +6,113 @@ const { logTeamActivity } = require('../services/activityService');
 const Activity = require('../models/Activity');
 const Notification = require('../models/Notification');
 
+/**
+ * Create a new team
+ * @route POST /api/teams
+ * @access Private
+ */
 const createTeam = async (req, res) => {
   try {
-    const { name, description, avatar } = req.body;
+    const { name, description, members } = req.body;
     
+    // Validate required fields
     if (!name) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide a team name'
+        message: 'Team name is required'
       });
     }
     
-    // Create the team with the current user as owner and admin
-    const team = await Team.create({
+    // Create team with current user as owner
+    const newTeam = {
       name,
       description: description || '',
       owner: req.user.id,
-      members: [{
+      members: [] // Initialize with empty array
+    };
+    
+    // Process members if provided
+    if (members && Array.isArray(members)) {
+      // Make sure each member has the required fields
+      newTeam.members = members.map(member => {
+        if (typeof member === 'string') {
+          // If member is just a user ID string
+          return {
+            user: member,
+            role: 'viewer',
+            joinedAt: Date.now()
+          };
+        } else if (typeof member === 'object' && member.user) {
+          // If member is an object with user property
+          return {
+            user: member.user,
+            role: member.role || 'viewer',
+            joinedAt: Date.now()
+          };
+        }
+        return null;
+      }).filter(Boolean); // Remove any null entries
+    } else if (members && typeof members === 'string') {
+      // If members is a JSON string, try to parse it
+      try {
+        const parsedMembers = JSON.parse(members);
+        if (Array.isArray(parsedMembers)) {
+          newTeam.members = parsedMembers.map(member => ({
+            user: member.user,
+            role: member.role || 'viewer',
+            joinedAt: Date.now()
+          }));
+        }
+      } catch (e) {
+        console.error('Failed to parse members JSON:', e);
+        // Continue with empty members array
+      }
+    }
+    
+    // Add owner as admin member if not already in members
+    const ownerInMembers = newTeam.members.some(member => 
+      member.user.toString() === req.user.id
+    );
+    
+    if (!ownerInMembers) {
+      newTeam.members.push({
         user: req.user.id,
         role: 'admin',
         joinedAt: Date.now()
-      }],
-      avatar: avatar || null
+      });
+    }
+    
+    // Debug
+    console.log('Creating team with data:', JSON.stringify(newTeam, null, 2));
+    
+    const team = await Team.create(newTeam);
+    
+    // Populate owner and members
+    const populatedTeam = await Team.findById(team._id)
+      .populate('owner', 'name username avatar')
+      .populate('members.user', 'name username avatar email');
+    
+    // Log activity
+    await Activity.create({
+      user: req.user.id,
+      action: 'created_team',
+      teamId: team._id,
+      metadata: {
+        teamName: team.name
+      }
     });
     
-    // Add this team to the user's teams array
-    await User.findByIdAndUpdate(
-      req.user.id,
-      { $addToSet: { teams: team._id } }
-    );
-
-    // Log activity
-    await logTeamActivity(
-      'create_team',
-      req.user,
-      team,
-      null,
-      `${req.user.username || 'A user'} created team "${name}"`,
-      { teamName: name }
-    );
-    
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      data: team
+      message: 'Team created successfully',
+      data: populatedTeam
     });
   } catch (error) {
     console.error('Create team error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || 'An error occurred while creating the team'
+      message: 'Server error while creating team',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -994,46 +1052,39 @@ const addBoardMembers = async (req, res) => {
 };
 
 /**
- * Get all teams for the authenticated user
- * @route GET /api/teams/me
+ * Get all teams for the current user
+ * @route GET /api/teams
  * @access Private
  */
 const getUserTeams = async (req, res) => {
   try {
     const userId = req.user.id;
-
-    // Find teams where user is owner or a member
+    
+    // Debug logging
+    console.log(`Searching for teams for user: ${userId}`);
+    
+    // Find teams where the user is owner, admin, or member
     const teams = await Team.find({
       $or: [
         { owner: userId },
-        { 'members.user': userId }
+        { admins: userId },
+        { members: { $elemMatch: { user: userId } } }
       ]
-    }).populate('owner', 'name username email avatar')
-      .populate('members.user', 'name username email avatar');
-
-    // Classify teams by role for easier frontend handling
-    const ownedTeams = teams.filter(team => team.owner._id.toString() === userId);
+    })
+    .populate('owner', 'name username avatar')
+    .populate('admins', 'name username avatar')
+    .populate('members.user', 'name username avatar');
     
-    const memberTeams = teams.filter(team => {
-      // Not an owner but is a member
-      if (team.owner._id.toString() === userId) return false;
-      
-      return team.members.some(member => 
-        member.user._id.toString() === userId
-      );
-    });
-
+    // Debug logging
+    console.log(`Found ${teams.length} teams for user ${userId}`);
+    
     return res.status(200).json({
       success: true,
-      data: {
-        teams,
-        ownedTeams,
-        memberTeams,
-        count: teams.length
-      }
+      count: teams.length,
+      data: teams
     });
   } catch (error) {
-    console.error('Error fetching user teams:', error);
+    console.error('Get user teams error:', error);
     return res.status(500).json({
       success: false,
       message: 'Server error while fetching teams',

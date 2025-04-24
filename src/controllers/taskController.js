@@ -159,11 +159,76 @@ const createTask = async (req, res) => {
 };
 
 /**
+ * Get all tasks for the authenticated user
+ * @route GET /api/tasks/all
+ * @access Private
+ */
+const getAllTasks = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Fetch boards where user is a member
+    const boards = await Board.find({
+      $or: [
+        { createdBy: userId },
+        { 'members.user': userId }
+      ]
+    });
+    
+    const boardIds = boards.map(board => board._id);
+    
+    // Get user's team IDs
+    const teams = await Team.find({
+      $or: [
+        { owner: userId },
+        { admins: userId },
+        { members: { $elemMatch: { user: userId } } }
+      ]
+    });
+    
+    const teamIds = teams.map(team => team._id);
+    
+    // Get all tasks from user's boards or teams
+    const tasks = await Task.find({
+      $or: [
+        { board: { $in: boardIds } },
+        { team: { $in: teamIds } },
+        { assignedTo: userId },
+        { createdBy: userId }
+      ]
+    })
+    .populate('createdBy', 'name username avatar')
+    .populate('assignedTo', 'name username avatar email')
+    .populate('board', 'title')
+    .populate('column', 'name')
+    .sort({ updatedAt: -1 });
+    
+    return res.status(200).json({
+      success: true,
+      count: tasks.length,
+      data: tasks
+    });
+  } catch (error) {
+    console.error('Get all tasks error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching tasks',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
  * Get task by ID
  */
 const getTaskById = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Special case handling - if someone hits the /api/tasks/all route with old controller
+    if (id === 'all') {
+      return getAllTasks(req, res);
+    }
     
     // Validate MongoDB ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -478,6 +543,7 @@ const deleteTask = async (req, res) => {
 // IMPORTANT: Export all controllers used in routes
 module.exports = {
   createTask,
+  getAllTasks, // Add this
   getTaskById,
   moveTask,
   updateTask,
