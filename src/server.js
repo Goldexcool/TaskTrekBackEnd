@@ -1,152 +1,149 @@
 const express = require('express');
-const dotenv = require('dotenv');
-const fs = require('fs');
-const path = require('path');
 const http = require('http');
-const socketIo = require('socket.io');
-const jwt = require('jsonwebtoken');
-const { connectDB } = require('./config/db');
+const socketIO = require('socket.io');
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
 const app = require('./app');
 
 // Load environment variables
 dotenv.config();
 
-// Check and set critical environment variables
-const ensureEnvVars = () => {
-  const requiredVars = {
-    JWT_SECRET: 'dev-jwt-secret-key-tasktrek-backend-2025-development-only',
-    REFRESH_TOKEN_SECRET: 'dev-refresh-token-secret-key-tasktrek-backend-2025-development-only',
-    MONGODB_URI: process.env.MONGODB_URI 
-  };
-  
-  let missingVars = [];
-  let warnMessage = '';
-  
-  for (const [key, defaultValue] of Object.entries(requiredVars)) {
-    if (!process.env[key]) {
-      missingVars.push(key);
-      
-      if (defaultValue && key !== 'MONGODB_URI') {
-        process.env[key] = defaultValue;
-        warnMessage += `\n  - ${key} set to development default (NOT SECURE FOR PRODUCTION)`;
-      }
-    }
-  }
-  
-  if (missingVars.length > 0) {
-    console.warn(`⚠️ Missing environment variables:${warnMessage}\n`);
-    console.warn('Please create or update your .env file with these variables.');
-    
-    // Create a sample .env file if it doesn't exist
-    try {
-      const envPath = path.join(__dirname, '..', '.env');
-      if (!fs.existsSync(envPath)) {
-        const envContent = Object.entries(requiredVars)
-          .map(([key, value]) => `${key}=${key === 'MONGODB_URI' ? 'your_mongodb_connection_string' : value}`)
-          .join('\n');
-        
-        fs.writeFileSync(envPath, envContent);
-        console.log('Created sample .env file. Please update it with your actual values.');
-      }
-    } catch (err) {
-      console.error('Failed to create sample .env file:', err.message);
-    }
-  } else {
-    console.log('✅ All required environment variables are set');
-  }
-};
-
-ensureEnvVars();
-
-// Set port from environment variables or default to 3000
-const PORT = process.env.PORT || 3000;
-
 // Create HTTP server
 const server = http.createServer(app);
 
 // Initialize Socket.io with CORS settings
-const io = socketIo(server, {
+const io = socketIO(server, {
   cors: {
-    origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000'],
-    methods: ['GET', 'POST'],
+    origin: process.env.ALLOWED_ORIGINS ? 
+      process.env.ALLOWED_ORIGINS.split(',') : 
+      'http://localhost:3000',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true
   }
 });
 
-// Socket.io connection handler
-const connectedUsers = new Map();
+// Make io instance available to our routes
+app.set('io', io);
 
+// Socket.io connection handler
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
   
-  // Authenticate connection with JWT
-  socket.on('authenticate', (token) => {
-    try {
-      // Verify the token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
-      // Store the authenticated user's ID with this socket
-      socket.userId = decoded.id;
-      
-      // Add to connected users map
-      if (!connectedUsers.has(decoded.id)) {
-        connectedUsers.set(decoded.id, new Set());
-      }
-      connectedUsers.get(decoded.id).add(socket.id);
-      
-      // Join a room specific to this user for direct messages
-      socket.join(`user:${decoded.id}`);
-      
-      console.log(`User ${decoded.id} authenticated on socket ${socket.id}`);
-      socket.emit('authenticated');
-      
-    } catch (error) {
-      console.error('Socket authentication failed:', error);
-      socket.emit('auth_error', { message: 'Authentication failed' });
+  // Join user to their personal room for targeted messages
+  socket.on('join:user', (userId) => {
+    if (userId) {
+      socket.join(`user:${userId}`);
+      console.log(`User ${userId} joined their room`);
     }
   });
   
-  // Handle disconnect
+  // Join user to a board room for board-specific updates
+  socket.on('join:board', (boardId) => {
+    if (boardId) {
+      socket.join(`board:${boardId}`);
+      console.log(`User joined board room: ${boardId}`);
+    }
+  });
+  
+  // Join user to team room for team-wide notifications
+  socket.on('join:team', (teamId) => {
+    if (teamId) {
+      socket.join(`team:${teamId}`);
+      console.log(`User joined team room: ${teamId}`);
+    }
+  });
+  
+  // Handle disconnection
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
-    
-    if (socket.userId) {
-      // Remove socket from user's connections
-      const userSockets = connectedUsers.get(socket.userId);
-      if (userSockets) {
-        userSockets.delete(socket.id);
-        if (userSockets.size === 0) {
-          connectedUsers.delete(socket.userId);
-        }
-      }
-    }
   });
 });
 
-// Make io available to the rest of the app
-app.set('io', io);
-
-// Connect to MongoDB and start server
-const startServer = async () => {
+// MongoDB connection
+const connectDB = async () => {
   try {
-    // Connect to database
-    const dbConnected = await connectDB();
+    const maxRetries = 4;
+    let retries = 0;
+    let connected = false;
     
-    if (!dbConnected && process.env.NODE_ENV === 'production') {
-      console.error('Failed to connect to MongoDB. Exiting in production mode.');
-      process.exit(1);
+    while (retries < maxRetries && !connected) {
+      try {
+        retries++;
+        console.log(`MongoDB connection attempt ${retries}/${maxRetries}...`);
+        
+        // Extract username from connection string for logging (hide password)
+        const uri = process.env.MONGODB_URI;
+        const usernameMatch = uri.match(/\/\/(.*?):/);
+        const username = usernameMatch ? usernameMatch[1] : 'unknown';
+        console.log(`Connecting with username: ${username}`);
+        
+        await mongoose.connect(process.env.MONGODB_URI);
+        connected = true;
+        
+        console.log(`MongoDB connected successfully: ${mongoose.connection.host}`);
+        console.log(`Database name: ${mongoose.connection.db.databaseName}`);
+      } catch (error) {
+        console.error(`Connection attempt ${retries} failed:`, error.message);
+        
+        if (retries >= maxRetries) {
+          throw error;
+        }
+        
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
-    
-    // Start server
-    server.listen(PORT, () => {
-      console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
-      console.log(`CORS configured to allow origins: ${process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3001'}`);
-    });
   } catch (error) {
-    console.error('Error starting server:', error.message);
+    console.error('Failed to connect to MongoDB:', error.message);
     process.exit(1);
   }
 };
 
-// Start the server
+// Start server
+const startServer = async () => {
+  try {
+    // Connect to MongoDB
+    await connectDB();
+    
+    // Check for required environment variables
+    const requiredEnvVars = [
+      'MONGODB_URI', 
+      'JWT_SECRET', 
+      'ACCESS_TOKEN_SECRET', 
+      'REFRESH_TOKEN_SECRET'
+    ];
+    
+    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    
+    if (missingVars.length > 0) {
+      console.error('Missing required environment variables:', missingVars.join(', '));
+      process.exit(1);
+    }
+    
+    console.log('✅ All required environment variables are set');
+    
+    // Start the server
+    const PORT = process.env.PORT || 3000;
+    
+    server.listen(PORT, () => {
+      console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error('Server startup error:', error);
+    process.exit(1);
+  }
+};
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled Rejection:', error);
+  process.exit(1);
+});
+
 startServer();
