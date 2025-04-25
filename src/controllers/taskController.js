@@ -153,34 +153,36 @@ const createTask = async (req, res) => {
 };
 
 /**
- * Create a task (client-friendly version that accepts boardId/columnId in body)
+ * Create a task (client-friendly version that accepts columnId in body)
  * @route POST /api/tasks
  * @access Private
  */
 const createTaskFromBody = async (req, res) => {
   try {
-    const { boardId, columnId, title, description, priority, dueDate, assignedTo, position } = req.body;
+    const { title, columnId, position, description, priority, dueDate, assignedTo } = req.body;
     
-    if (!boardId || !columnId || !title) {
+    if (!columnId || !title) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: boardId, columnId, and title are required'
+        message: 'Missing required fields: columnId and title are required'
       });
     }
+    
+    const column = await Column.findById(columnId);
+    if (!column) {
+      return res.status(404).json({
+        success: false,
+        message: 'Column not found'
+      });
+    }
+    
+    const boardId = column.board;
     
     const board = await Board.findById(boardId);
     if (!board) {
       return res.status(404).json({
         success: false,
         message: 'Board not found'
-      });
-    }
-
-    const column = await Column.findOne({ _id: columnId, board: boardId });
-    if (!column) {
-      return res.status(404).json({
-        success: false,
-        message: 'Column not found in this board'
       });
     }
 
@@ -256,7 +258,6 @@ const getAllTasks = async (req, res) => {
     
     const boardIds = boards.map(board => board._id);
     
-    // Get user's team IDs
     const teams = await Team.find({
       $or: [
         { owner: userId },
@@ -267,7 +268,6 @@ const getAllTasks = async (req, res) => {
     
     const teamIds = teams.map(team => team._id);
     
-    // Get all tasks from user's boards or teams
     const tasks = await Task.find({
       $or: [
         { board: { $in: boardIds } },
@@ -297,14 +297,11 @@ const getAllTasks = async (req, res) => {
   }
 };
 
-/**
- * Get task by ID
- */
+
 const getTaskById = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Special case handling - if someone hits the /api/tasks/all route with old controller
     if (id === 'all') {
       return getAllTasks(req, res);
     }
