@@ -220,6 +220,10 @@ const getAllTasks = async (req, res) => {
         path: 'column',
         select: 'name order'
       })
+      .populate({
+        path: 'team',
+        select: 'name'
+      })
       .sort({ updatedAt: -1 });
     
     // Add isCompleted flag based on status
@@ -571,6 +575,10 @@ const completeTask = async (req, res) => {
       .populate({
         path: 'column',
         select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
       });
     
     return res.status(200).json({
@@ -638,6 +646,10 @@ const reopenTask = async (req, res) => {
       .populate({
         path: 'column',
         select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
       });
     
     return res.status(200).json({
@@ -681,6 +693,10 @@ const getTasksByColumn = async (req, res) => {
       .populate({
         path: 'column',
         select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
       });
     
     // Add isCompleted flag
