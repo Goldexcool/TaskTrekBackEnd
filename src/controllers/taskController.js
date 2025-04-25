@@ -7,6 +7,25 @@ const Activity = require('../models/Activity');
 const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
 
+const TaskSchema = new mongoose.Schema({
+  // Existing fields...
+  status: {
+    type: String,
+    enum: ['todo', 'in_progress', 'done'],
+    default: 'todo'
+  },
+  completedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  completedAt: {
+    type: Date,
+    default: null
+  }
+  // Other existing fields...
+});
+
 /**
  * Check if a user has permission to access a board
  */
@@ -658,15 +677,23 @@ const completeTask = async (req, res) => {
     }
     
     task.status = 'done';
-    task.completedAt = Date.now();
+    task.completedAt = new Date();
     task.completedBy = req.user.id;
-    task.updatedAt = Date.now();
+    task.updatedAt = new Date();
     
     await task.save();
     
     try {
-      await logTaskActivity(req.user.id, 'completed_task', task._id, task.board, task.column, {
-        taskTitle: task.title
+      await Activity.create({
+        user: req.user.id,
+        action: 'completed_task',
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column,
+        description: `Completed task "${task.title}"`,
+        metadata: {
+          taskTitle: task.title
+        }
       });
     } catch (logError) {
       console.error('Activity logging error:', logError);
@@ -676,13 +703,22 @@ const completeTask = async (req, res) => {
       .populate('createdBy', 'name username avatar')
       .populate('assignedTo', 'name username avatar email')
       .populate('completedBy', 'name username avatar')
-      .populate('board', 'title')
-      .populate('column', 'name');
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      });
     
     return res.status(200).json({
       success: true,
       message: 'Task marked as complete',
-      data: updatedTask
+      data: {
+        ...updatedTask._doc,
+        isCompleted: true
+      }
     });
   } catch (error) {
     console.error('Complete task error:', error);
@@ -725,13 +761,21 @@ const reopenTask = async (req, res) => {
     task.status = 'todo';
     task.completedAt = null;
     task.completedBy = null;
-    task.updatedAt = Date.now();
+    task.updatedAt = new Date();
     
     await task.save();
     
     try {
-      await logTaskActivity(req.user.id, 'reopened_task', task._id, task.board, task.column, {
-        taskTitle: task.title
+      await Activity.create({
+        user: req.user.id,
+        action: 'reopened_task',
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column,
+        description: `Reopened task "${task.title}"`,
+        metadata: {
+          taskTitle: task.title
+        }
       });
     } catch (logError) {
       console.error('Activity logging error:', logError);
@@ -740,13 +784,22 @@ const reopenTask = async (req, res) => {
     const updatedTask = await Task.findById(id)
       .populate('createdBy', 'name username avatar')
       .populate('assignedTo', 'name username avatar email')
-      .populate('board', 'title')
-      .populate('column', 'name');
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      });
     
     return res.status(200).json({
       success: true,
       message: 'Task reopened',
-      data: updatedTask
+      data: {
+        ...updatedTask._doc,
+        isCompleted: false
+      }
     });
   } catch (error) {
     console.error('Reopen task error:', error);
