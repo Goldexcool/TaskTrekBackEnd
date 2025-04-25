@@ -313,7 +313,6 @@ const getTaskById = async (req, res) => {
       return getAllTasks(req, res);
     }
     
-    // Validate MongoDB ID
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -321,12 +320,18 @@ const getTaskById = async (req, res) => {
       });
     }
 
-    // Find task and populate related fields
     const task = await Task.findById(id)
       .populate('createdBy', 'name username avatar')
       .populate('assignedTo', 'name username avatar email')
-      .populate('board', 'title')
-      .populate('column', 'name');
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description createdBy members team'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      });
 
     if (!task) {
       return res.status(404).json({
@@ -335,17 +340,28 @@ const getTaskById = async (req, res) => {
       });
     }
 
-    // Get the board to check permissions
-    const board = await Board.findById(task.board);
-    if (!board) {
+    if (!task.board) {
       return res.status(404).json({
         success: false,
         message: 'Associated board not found'
       });
     }
 
-    // Check user permission
-    const hasPermission = await checkBoardPermission(board, req.user.id);
+    // If board is populated as an object, use it directly
+    let boardToCheck = task.board;
+    
+    // If board is just an ID, fetch the full board
+    if (!task.board.createdBy) {
+      boardToCheck = await Board.findById(task.board);
+      if (!boardToCheck) {
+        return res.status(404).json({
+          success: false,
+          message: 'Associated board not found'
+        });
+      }
+    }
+
+    const hasPermission = await checkBoardPermission(boardToCheck, req.user.id);
     if (!hasPermission) {
       return res.status(403).json({
         success: false,
