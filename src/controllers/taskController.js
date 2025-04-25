@@ -278,8 +278,14 @@ const getAllTasks = async (req, res) => {
     })
     .populate('createdBy', 'name username avatar')
     .populate('assignedTo', 'name username avatar email')
-    .populate('board', 'title')
-    .populate('column', 'name')
+    .populate({
+      path: 'board',
+      select: 'title description'
+    })
+    .populate({
+      path: 'column',
+      select: 'name order'
+    })
     .sort({ updatedAt: -1 });
     
     return res.status(200).json({

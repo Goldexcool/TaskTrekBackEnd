@@ -10,7 +10,9 @@ router.post('/', authMiddleware.authenticateToken, taskController.createTaskFrom
 router.get('/:id', authMiddleware.authenticateToken, taskController.getTaskById);
 
 router.patch('/:id', authMiddleware.authenticateToken, taskController.updateTask);
+
 router.patch('/:id/move', authMiddleware.authenticateToken, taskController.moveTask);
+
 router.delete('/:id', authMiddleware.authenticateToken, taskController.deleteTask);
 
 module.exports = router;

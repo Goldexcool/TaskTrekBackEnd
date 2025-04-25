@@ -171,36 +171,60 @@ const getBoards = async (req, res) => {
 // Get board by ID
 const getBoardById = async (req, res) => {
   try {
-    const board = await Board.findById(req.params.id)
-      .populate('team', 'name')
-      .populate('createdBy', 'username email');
-    
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const board = await Board.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('members.user', 'name username avatar email')
+      .populate('team', 'name');
+
     if (!board) {
       return res.status(404).json({
         success: false,
         message: 'Board not found'
       });
     }
+
+    // More permissive check - include creator, direct members, and team members
+    const isCreator = board.createdBy && board.createdBy._id.toString() === userId;
+    const isBoardMember = board.members && board.members.some(m => 
+      m.user && (m.user._id || m.user).toString() === userId
+    );
     
-    const isCreator = board.createdBy._id.toString() === req.user.id;
-    
-    
-    if (!isCreator) {
+    let isTeamMember = false;
+    if (board.team) {
+      const team = await Team.findById(board.team);
+      isTeamMember = team && (
+        team.owner.toString() === userId || 
+        team.admins.some(id => id.toString() === userId) ||
+        team.members.some(m => (m.user || m).toString() === userId)
+      );
+    }
+
+    if (!isCreator && !isBoardMember && !isTeamMember) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to access this board'
       });
     }
-    
-    res.status(200).json({
+
+    // Add columns for this board
+    const columns = await Column.find({ board: id }).sort('order');
+
+    return res.status(200).json({
       success: true,
-      data: board
+      data: {
+        ...board._doc,
+        columns
+      }
     });
   } catch (error) {
-    console.error('Error getting board by ID:', error);
-    res.status(500).json({
+    console.error('Get board error:', error);
+    return res.status(500).json({
       success: false,
-      message: error.message
+      message: 'Server error while fetching board',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
