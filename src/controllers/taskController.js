@@ -776,6 +776,169 @@ const getTasksByColumn = async (req, res) => {
   }
 };
 
+// Assign a task to a user
+const assignTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID is required'
+      });
+    }
+    
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Update the task
+    task.assignedTo = userId;
+    task.updatedAt = Date.now();
+    await task.save();
+    
+    // Log activity
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: 'assigned_task',
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column,
+        description: `Assigned task "${task.title}" to a user`,
+        metadata: {
+          taskTitle: task.title,
+          assignedTo: userId
+        }
+      });
+    } catch (logError) {
+      console.error('Activity logging error:', logError);
+    }
+    
+    // Return updated task
+    const updatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task assigned successfully',
+      data: {
+        ...updatedTask._doc,
+        isCompleted: updatedTask.status === 'done'
+      }
+    });
+  } catch (error) {
+    console.error('Assign task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while assigning task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Unassign a task
+const unassignTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Store who was previously assigned for the activity log
+    const previouslyAssigned = task.assignedTo;
+    
+    // Update the task
+    task.assignedTo = null;
+    task.updatedAt = Date.now();
+    await task.save();
+    
+    // Log activity
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: 'unassigned_task',
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column,
+        description: `Unassigned user from task "${task.title}"`,
+        metadata: {
+          taskTitle: task.title,
+          previouslyAssigned
+        }
+      });
+    } catch (logError) {
+      console.error('Activity logging error:', logError);
+    }
+    
+    // Return updated task
+    const updatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task unassigned successfully',
+      data: {
+        ...updatedTask._doc,
+        isCompleted: updatedTask.status === 'done'
+      }
+    });
+  } catch (error) {
+    console.error('Unassign task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while unassigning task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createTask,
   createTaskFromBody,
@@ -786,5 +949,7 @@ module.exports = {
   moveTask,
   completeTask,
   reopenTask,
-  deleteTask
+  deleteTask,
+  assignTask,
+  unassignTask
 };
