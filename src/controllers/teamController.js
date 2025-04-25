@@ -23,84 +23,70 @@ const createTeam = async (req, res) => {
       });
     }
     
-    // Create team with current user as owner
-    const newTeam = {
-      name,
-      description: description || '',
-      owner: req.user.id,
-      members: [] // Initialize with empty array
-    };
+    // Format members properly
+    let formattedMembers = [];
     
-    // Process members if provided
-    if (members && Array.isArray(members)) {
-      // Make sure each member has the required fields
-      newTeam.members = members.map(member => {
-        if (typeof member === 'string') {
-          // If member is just a user ID string
-          return {
-            user: member,
-            role: 'viewer',
-            joinedAt: Date.now()
-          };
-        } else if (typeof member === 'object' && member.user) {
-          // If member is an object with user property
-          return {
-            user: member.user,
-            role: member.role || 'viewer',
-            joinedAt: Date.now()
-          };
+    if (members) {
+      // Handle different formats for members
+      if (typeof members === 'string') {
+        try {
+          // Try to parse if it's a JSON string
+          const parsedMembers = JSON.parse(members);
+          if (Array.isArray(parsedMembers)) {
+            formattedMembers = parsedMembers.map(m => ({
+              user: m.user,
+              role: m.role || 'viewer'
+            }));
+          }
+        } catch (e) {
+          console.error('Failed to parse members JSON:', e);
         }
-        return null;
-      }).filter(Boolean); // Remove any null entries
-    } else if (members && typeof members === 'string') {
-      // If members is a JSON string, try to parse it
-      try {
-        const parsedMembers = JSON.parse(members);
-        if (Array.isArray(parsedMembers)) {
-          newTeam.members = parsedMembers.map(member => ({
-            user: member.user,
-            role: member.role || 'viewer',
-            joinedAt: Date.now()
-          }));
-        }
-      } catch (e) {
-        console.error('Failed to parse members JSON:', e);
-        // Continue with empty members array
+      } else if (Array.isArray(members)) {
+        formattedMembers = members.map(m => {
+          if (typeof m === 'string') {
+            return { user: m, role: 'viewer' };
+          } else if (m && m.user) {
+            return { user: m.user, role: m.role || 'viewer' };
+          }
+          return null;
+        }).filter(Boolean);
       }
     }
     
-    // Add owner as admin member if not already in members
-    const ownerInMembers = newTeam.members.some(member => 
-      member.user.toString() === req.user.id
+    // Make sure owner is included as a member with admin role
+    const ownerInMembers = formattedMembers.some(m => 
+      m.user.toString() === req.user.id
     );
     
     if (!ownerInMembers) {
-      newTeam.members.push({
+      formattedMembers.push({
         user: req.user.id,
-        role: 'admin',
-        joinedAt: Date.now()
+        role: 'admin'
       });
     }
     
-    // Debug
-    console.log('Creating team with data:', JSON.stringify(newTeam, null, 2));
+    // Create team
+    const team = await Team.create({
+      name,
+      description: description || '',
+      owner: req.user.id,
+      members: formattedMembers
+    });
     
-    const team = await Team.create(newTeam);
-    
-    // Populate owner and members
+    // Populate team data
     const populatedTeam = await Team.findById(team._id)
       .populate('owner', 'name username avatar')
       .populate('members.user', 'name username avatar email');
     
-    // Log activity
-    await Activity.create({
-      user: req.user.id,
-      action: 'created_team',
-      teamId: team._id,
-      metadata: {
+    // Log activity using the service - wrapped in try/catch
+    try {
+      await logTeamActivity(req.user.id, 'created_team', team._id, {
         teamName: team.name
-      }
-    });
+      });
+    } catch (logError) {
+      // Log the error but don't fail the request
+      console.error('Failed to log team activity:', logError);
+    }
     
     return res.status(201).json({
       success: true,
@@ -335,13 +321,18 @@ const addMember = async (req, res) => {
     const requestUser = await User.findById(req.user.id).select('name username avatar');
 
     // Create activity record
-    await Activity.create({
-      user: req.user.id,
-      action: 'added_member',
-      teamId: team._id,
-      targetUser: user._id,
-      metadata: { role }
-    });
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: 'added_member',
+        teamId: team._id,
+        targetUser: user._id,
+        metadata: { role }
+      });
+    } catch (activityError) {
+      console.error('Failed to create activity record:', activityError);
+      // Continue execution - don't fail the main functionality
+    }
 
     // Create notification for the added user
     const notification = await Notification.create({
@@ -822,15 +813,19 @@ const inviteUser = async (req, res) => {
     
     // Invite user logic...
     
-    // Log activity
-    await logTeamActivity(
-      'invite_user',
-      req.user,
-      team,
-      targetUser,
-      `${req.user.username || 'A user'} invited ${targetUser.username || email} to team "${team.name}"`,
-      { inviteeEmail: email, teamId }
-    );
+    // Log activity - wrapped in try/catch
+    try {
+      await logTeamActivity(
+        'invite_user',
+        req.user,
+        team,
+        targetUser,
+        `${req.user.username || 'A user'} invited ${targetUser.username || email} to team "${team.name}"`,
+        { inviteeEmail: email, teamId }
+      );
+    } catch (logError) {
+      console.error('Failed to log team invitation activity:', logError);
+    }
     
     res.status(200).json({
       success: true,
