@@ -21,7 +21,6 @@ const authenticateToken = (req, res, next) => {
       });
     }
     
-    // Use JWT_SECRET for verification
     jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
       if (err) {
         console.error('Token verification failed:', err.message);
@@ -31,7 +30,6 @@ const authenticateToken = (req, res, next) => {
         });
       }
       
-      // Set user data in request object
       req.user = decoded;
       next();
     });
@@ -45,7 +43,6 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-// Make sure isAdmin middleware is defined and exported correctly
 const isAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({

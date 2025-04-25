@@ -5,7 +5,6 @@ console.log('Setting up email transporter with:', {
   pass: process.env.EMAIL_PASS ? '[REDACTED]' : 'undefined'
 });
 
-// Create reusable transporter
 let transporter = null;
 
 const getTransporter = () => {
@@ -16,12 +15,11 @@ const getTransporter = () => {
     return null;
   }
   
-  // Create new transporter
   transporter = nodemailer.createTransport({
-    service: 'gmail',  // Use Gmail service
+    service: 'gmail', 
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS  // This should be an app password
+      pass: process.env.EMAIL_PASS  
     },
     logger: true 
   });
@@ -29,7 +27,6 @@ const getTransporter = () => {
   return transporter;
 };
 
-// Send password reset email
 const sendPasswordResetEmail = async (email, resetToken) => {
   try {
     console.log(`Attempting to send password reset email to: ${email}`);
@@ -39,7 +36,6 @@ const sendPasswordResetEmail = async (email, resetToken) => {
       throw new Error('Email transporter not configured');
     }
     
-    // Create reset URL
     const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
     
     const mailOptions = {
@@ -107,7 +103,6 @@ const sendPasswordResetEmail = async (email, resetToken) => {
   }
 };
 
-// Send password reset confirmation
 const sendPasswordResetConfirmationEmail = async (email) => {
   try {
     console.log(`Sending password reset confirmation to: ${email}`);
@@ -178,7 +173,6 @@ const sendPasswordResetConfirmationEmail = async (email) => {
   }
 };
 
-// Send welcome email
 const sendWelcomeEmail = async (user) => {
   try {
     console.log(`Sending welcome email to: ${user.email}`);
@@ -292,12 +286,10 @@ const sendWelcomeEmail = async (user) => {
     return true;
   } catch (error) {
     console.error('Error sending welcome email:', error);
-    // We don't want to throw here as welcome email is not critical
     return false;
   }
 };
 
-// Export all email-related functions
 const availableMailerFunctions = {
   sendPasswordResetEmail: typeof sendPasswordResetEmail,
   sendPasswordResetConfirmationEmail: typeof sendPasswordResetConfirmationEmail,

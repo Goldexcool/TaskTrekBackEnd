@@ -1,8 +1,6 @@
 const Activity = require('../models/Activity');
 
-/**
- * Generate a human-readable description based on action and metadata
- */
+
 const generateDescription = (action, metadata = {}) => {
   switch (action) {
     case 'created_task':
@@ -18,14 +16,10 @@ const generateDescription = (action, metadata = {}) => {
     case 'created_team':
       return `Created team "${metadata.teamName || 'Untitled'}"`;
     default:
-      // This should return something!
       return `Performed action: ${action.replace(/_/g, ' ')}`;
   }
 };
 
-/**
- * Log a task-related activity
- */
 const logTaskActivity = async (userId, action, taskId, boardId, columnId, metadata = {}) => {
   try {
     await Activity.create({
@@ -40,13 +34,10 @@ const logTaskActivity = async (userId, action, taskId, boardId, columnId, metada
     });
   } catch (error) {
     console.error(`Error logging task activity (${action}):`, error);
-    // Don't throw - activity logging should not break the main functionality
   }
 };
 
-/**
- * Log a board-related activity
- */
+
 const logBoardActivity = async (userId, action, boardId, metadata = {}) => {
   try {
     await Activity.create({
@@ -62,9 +53,7 @@ const logBoardActivity = async (userId, action, boardId, metadata = {}) => {
   }
 };
 
-/**
- * Log a team-related activity
- */
+
 const logTeamActivity = async (userId, action, teamId, metadata = {}) => {
   try {
     const description = generateDescription(action, metadata);
@@ -78,7 +67,6 @@ const logTeamActivity = async (userId, action, teamId, metadata = {}) => {
       timestamp: Date.now()
     });
   } catch (error) {
-    // Log error but don't throw - activity logging should not break the main functionality
     console.error(`Error logging team activity (${action}):`, error);
   }
 };

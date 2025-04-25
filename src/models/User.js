@@ -3,12 +3,11 @@ const bcrypt = require('bcryptjs');
 
 const UserSchema = new mongoose.Schema(
   {
-    // Support both name and username fields
     name: { 
       type: String,
       trim: true,
       default: function() {
-        return this.username; // Use username as default name
+        return this.username; 
       }
     },
     username: {
@@ -35,14 +34,12 @@ const UserSchema = new mongoose.Schema(
       minlength: 8,
       select: false,
       set: function(password) {
-        // Don't transform hashed passwords - only hash plain passwords
         if (password.startsWith('$2b$') || password.startsWith('$2a$')) {
           return password;
         }
-        return password; // Return as-is, we'll hash separately
+        return password; 
       }
     },
-    // Verification fields
     isVerified: {
       type: Boolean,
       default: false
@@ -55,18 +52,15 @@ const UserSchema = new mongoose.Schema(
     },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
-    // Refresh token for authentication
     refreshToken: {
       type: String,
       default: null,
       select: false
     },
-    // Add this to your existing User schema
     teams: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Team'
     }],
-    // Additional user profile data
     userData: {
       type: mongoose.Schema.Types.Mixed,
       default: {
@@ -88,7 +82,6 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Remove sensitive data from JSON responses
 UserSchema.methods.toJSON = function() {
   const user = this.toObject();
   delete user.password;
@@ -103,7 +96,6 @@ UserSchema.methods.matchPassword = async function(enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-// Create or retrieve the model
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
 
 module.exports = User;

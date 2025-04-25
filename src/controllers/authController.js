@@ -487,13 +487,12 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    // Hash the token from params to compare with stored hash
+
     const hashedToken = crypto
       .createHash('sha256')
       .update(token)
       .digest('hex');
 
-    // Find user with this token and valid expiry
     const user = await User.findOne({
       resetPasswordToken: hashedToken,
       resetPasswordExpire: { $gt: Date.now() }
@@ -514,17 +513,14 @@ const resetPassword = async (req, res) => {
       });
     }
 
-    // Hash the new password
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(password, salt);
     
-    // Clear reset token fields
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
     
     await user.save();
 
-    // Send confirmation email
     await sendPasswordResetConfirmationEmail(user.email);
 
     res.status(200).json({
@@ -540,10 +536,9 @@ const resetPassword = async (req, res) => {
   }
 };
 
-// Authentication middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN format
+  const token = authHeader && authHeader.split(' ')[1]; 
   
   if (!token) {
     console.log('No token provided in request:', req.headers);

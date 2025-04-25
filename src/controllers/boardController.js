@@ -88,7 +88,6 @@ const createBoard = async (req, res) => {
           teamMembers.push(team.owner);
         }
         
-        // Remove duplicates and the creator of the board
         const uniqueMembers = [...new Set(teamMembers
           .filter(memberId => memberId && memberId.toString() !== req.user.id)
           .map(memberId => memberId.toString()))];
@@ -183,14 +182,8 @@ const getBoardById = async (req, res) => {
       });
     }
     
-    // Make sure the board belongs to the user or user is in the team
     const isCreator = board.createdBy._id.toString() === req.user.id;
     
-    // If needed, you can also check if user is in the team
-    // const isTeamMember = await Team.findOne({
-    //   _id: board.team._id,
-    //   'members.user': req.user.id
-    // });
     
     if (!isCreator) {
       return res.status(403).json({
@@ -240,7 +233,6 @@ const updateBoard = async (req, res) => {
     const updatedBoard = await Board.findByIdAndUpdate(
       boardId,
       {
-        // Only update fields that are provided
         ...(title && { title }),
         ...(description && { description }),
         ...(backgroundColor && { backgroundColor }),
@@ -297,7 +289,6 @@ const deleteBoard = async (req, res) => {
       });
     }
     
-    // Make sure the board belongs to the user
     if (board.createdBy.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -335,7 +326,6 @@ const deleteBoard = async (req, res) => {
   }
 };
 
-// Get boards by team
 const getBoardsByTeam = async (req, res) => {
   try {
     const teamId = req.params.teamId;
@@ -362,14 +352,11 @@ const getBoardsByTeam = async (req, res) => {
   }
 };
 
-// @desc    Get detailed view of all boards with columns and tasks
-// @route   GET /api/boards/complete
-// @access  Private
+
 const getAllBoardsComplete = async (req, res) => {
   try {
     console.log('Getting complete boards data for user ID:', req.user.id);
     
-    // First, find all teams the user is a member of
     const userTeams = await Team.find({ 
       'members.user': req.user.id 
     }).select('_id');
@@ -377,7 +364,6 @@ const getAllBoardsComplete = async (req, res) => {
     const teamIds = userTeams.map(team => team._id);
     console.log(`User is member of ${teamIds.length} teams`);
     
-    // Find all boards created by the user OR belonging to teams the user is part of
     const boards = await Board.find({ 
       $or: [
         { createdBy: req.user.id },
@@ -397,18 +383,14 @@ const getAllBoardsComplete = async (req, res) => {
       });
     }
     
-    // Get all columns and tasks for these boards
     const boardIds = boards.map(board => board._id);
     console.log('Board IDs:', boardIds);
     
-    // Get all columns for these boards
     const columns = await Column.find({ board: { $in: boardIds } })
       .sort({ position: 1 });
     
     console.log(`Found ${columns.length} columns`);
-    
-    // Get all tasks for these boards by looking at their columns
-    // Since Task model might not have a direct reference to board
+
     const columnIds = columns.map(column => column._id);
     
     const tasks = await Task.find({ column: { $in: columnIds } })
@@ -418,13 +400,10 @@ const getAllBoardsComplete = async (req, res) => {
       
     console.log(`Found ${tasks.length} tasks`);
     
-    // Organize data by board
     const completeBoards = boards.map(board => {
-      // Get columns for this board
       const boardColumns = columns
         .filter(column => column.board.toString() === board._id.toString())
         .map(column => {
-          // Get tasks for this column
           const columnTasks = tasks
             .filter(task => task.column.toString() === column._id.toString())
             .map(task => ({
@@ -484,7 +463,6 @@ const getAllBoardsComplete = async (req, res) => {
   }
 };
 
-// Export all functions
 module.exports = { 
   createBoard, 
   getBoards, 

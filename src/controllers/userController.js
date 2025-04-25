@@ -1,9 +1,6 @@
 const User = require('../models/User');
 const { logUserActivity } = require('../services/activityService');
 
-// @desc    Search for users by email or username
-// @route   GET /api/users/search
-// @access  Private
 const searchUsers = async (req, res) => {
   try {
     const { query } = req.query;
@@ -15,7 +12,6 @@ const searchUsers = async (req, res) => {
       });
     }
     
-    // Search for users with matching email or username (case insensitive)
     const users = await User.find({
       $or: [
         { email: { $regex: query, $options: 'i' } },
@@ -24,7 +20,6 @@ const searchUsers = async (req, res) => {
       ]
     }).select('_id username email name avatar');
     
-    // Exclude the current user from results
     const filteredUsers = users.filter(user => user._id.toString() !== req.user.id);
     
     res.status(200).json({
@@ -41,11 +36,7 @@ const searchUsers = async (req, res) => {
   }
 };
 
-/**
- * Get authenticated user's profile
- * @route GET /api/users/profile
- * @access Private
- */
+
 const getProfile = async (req, res) => {
   try {
     console.log('Getting profile for user:', req.user.id);
@@ -59,7 +50,6 @@ const getProfile = async (req, res) => {
       });
     }
     
-    // The user schema already has toJSON method to handle sensitive data
     res.status(200).json({
       success: true,
       data: user
@@ -73,11 +63,6 @@ const getProfile = async (req, res) => {
   }
 };
 
-/**
- * Update user profile
- * @route PUT /api/users/profile
- * @access Private
- */
 const updateProfile = async (req, res) => {
   try {
     console.log('Updating profile for user:', req.user.id);
@@ -94,7 +79,6 @@ const updateProfile = async (req, res) => {
       social
     } = req.body;
     
-    // Find the user first
     const user = await User.findById(req.user.id);
     
     if (!user) {
@@ -104,7 +88,6 @@ const updateProfile = async (req, res) => {
       });
     }
     
-    // Build the update object
     const updateData = {};
     
     if (name !== undefined) updateData.name = name;
@@ -116,7 +99,6 @@ const updateProfile = async (req, res) => {
     if (website !== undefined) updateData.website = website;
     if (social !== undefined) updateData.social = social;
     
-    // Add updatedAt timestamp
     updateData.updatedAt = Date.now();
     
     const updatedUser = await User.findByIdAndUpdate(
@@ -125,7 +107,6 @@ const updateProfile = async (req, res) => {
       { new: true, runValidators: true }
     );
     
-    // Log the activity
     try {
       await logUserActivity(
         'update_profile',
@@ -135,7 +116,6 @@ const updateProfile = async (req, res) => {
       );
     } catch (activityError) {
       console.error('Failed to log profile update activity:', activityError);
-      // Continue execution even if activity logging fails
     }
     
     res.status(200).json({
@@ -151,11 +131,6 @@ const updateProfile = async (req, res) => {
   }
 };
 
-/**
- * Get user by ID
- * @route GET /api/users/:id
- * @access Private
- */
 const getUserById = async (req, res) => {
   try {
     const userId = req.params.id;

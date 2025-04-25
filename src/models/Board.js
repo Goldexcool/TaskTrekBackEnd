@@ -23,7 +23,7 @@ const BoardSchema = new mongoose.Schema({
     },
     backgroundColor: {
         type: String,
-        default: '#f5f5f5' // Light gray default
+        default: '#f5f5f5' 
     },
     colorScheme: {
         type: String,

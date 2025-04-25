@@ -11,12 +11,10 @@ const mongoose = require('mongoose');
  * Check if a user has permission to access a board
  */
 const checkBoardPermission = async (board, userId) => {
-  // Board creator has admin privileges
   if (board.createdBy && board.createdBy.toString() === userId) {
     return true;
   }
   
-  // Check if user is a board member (any role)
   if (board.members && Array.isArray(board.members)) {
     const isMember = board.members.some(member => 
       member.user && (
@@ -31,7 +29,6 @@ const checkBoardPermission = async (board, userId) => {
     }
   }
   
-  // Check team permissions if board belongs to a team
   if (board.team) {
     const team = await Team.findById(board.team);
     if (team) {
@@ -40,12 +37,10 @@ const checkBoardPermission = async (board, userId) => {
         return true;
       }
       
-      // Team admins have admin privileges on all team boards
       if (team.admins && team.admins.some(adminId => adminId.toString() === userId)) {
         return true;
       }
       
-      // Team members have access
       if (team.members && team.members.some(memberId => 
         typeof memberId === 'object' 
           ? memberId.user && memberId.user.toString() === userId
@@ -109,7 +104,6 @@ const createTask = async (req, res) => {
     
     const order = maxOrderTask ? maxOrderTask.order + 1 : 0;
 
-    // Create task
     const task = await Task.create({
       title,
       description,
@@ -159,15 +153,100 @@ const createTask = async (req, res) => {
 };
 
 /**
- * Get all tasks for the authenticated user
- * @route GET /api/tasks/all
+ * Create a task (client-friendly version that accepts boardId/columnId in body)
+ * @route POST /api/tasks
  * @access Private
  */
+const createTaskFromBody = async (req, res) => {
+  try {
+    const { boardId, columnId, title, description, priority, dueDate, assignedTo, position } = req.body;
+    
+    if (!boardId || !columnId || !title) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: boardId, columnId, and title are required'
+      });
+    }
+    
+    const board = await Board.findById(boardId);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+
+    const column = await Column.findOne({ _id: columnId, board: boardId });
+    if (!column) {
+      return res.status(404).json({
+        success: false,
+        message: 'Column not found in this board'
+      });
+    }
+
+    const hasPermission = await checkBoardPermission(board, req.user.id);
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to create tasks in this board'
+      });
+    }
+
+    let order = position;
+    if (order === undefined) {
+      const maxOrderTask = await Task.findOne({ column: columnId })
+        .sort({ order: -1 })
+        .limit(1);
+      
+      order = maxOrderTask ? maxOrderTask.order + 1 : 0;
+    }
+
+    const task = await Task.create({
+      title,
+      description: description || '',
+      priority: priority || 'medium',
+      dueDate,
+      assignedTo,
+      createdBy: req.user.id,
+      board: boardId,
+      column: columnId,
+      order,
+      team: board.team
+    });
+
+    const populatedTask = await Task.findById(task._id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email');
+
+    try {
+      await logTaskActivity(req.user.id, 'created_task', task._id, boardId, columnId, { 
+        taskTitle: title,
+        priority,
+        assignedTo: assignedTo || null
+      });
+    } catch (logError) {
+      console.error('Activity logging error:', logError);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Task created successfully',
+      data: populatedTask
+    });
+  } catch (error) {
+    console.error('Create task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while creating task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 const getAllTasks = async (req, res) => {
   try {
     const userId = req.user.id;
     
-    // Fetch boards where user is a member
     const boards = await Board.find({
       $or: [
         { createdBy: userId },
@@ -299,7 +378,6 @@ const moveTask = async (req, res) => {
       });
     }
 
-    // Find the task
     const task = await Task.findById(id);
     if (!task) {
       return res.status(404).json({
@@ -308,7 +386,6 @@ const moveTask = async (req, res) => {
       });
     }
 
-    // Get the board to check permissions
     const board = await Board.findById(task.board);
     if (!board) {
       return res.status(404).json({
@@ -406,7 +483,6 @@ const updateTask = async (req, res) => {
       });
     }
     
-    // Get the board to check permissions
     const board = await Board.findById(task.board);
     if (!board) {
       return res.status(404).json({
@@ -415,7 +491,6 @@ const updateTask = async (req, res) => {
       });
     }
     
-    // Check user permission
     const hasPermission = await checkBoardPermission(board, req.user.id);
     if (!hasPermission) {
       return res.status(403).json({
@@ -424,7 +499,6 @@ const updateTask = async (req, res) => {
       });
     }
     
-    // Store original values for activity and notifications
     const originalTitle = task.title;
     const originalAssignedTo = task.assignedTo ? task.assignedTo.toString() : null;
     
@@ -451,7 +525,6 @@ const updateTask = async (req, res) => {
         changes: {
           title: title !== originalTitle ? { from: originalTitle, to: title } : undefined,
           assignedTo: assignedTo !== originalAssignedTo ? { from: originalAssignedTo, to: assignedTo } : undefined,
-          // Add other changed fields as needed
         }
       }
     });
@@ -476,9 +549,6 @@ const updateTask = async (req, res) => {
   }
 };
 
-/**
- * Delete a task
- */
 const deleteTask = async (req, res) => {
   try {
     const { id } = req.params;
@@ -492,7 +562,6 @@ const deleteTask = async (req, res) => {
       });
     }
     
-    // Get the board to check permissions
     const board = await Board.findById(task.board);
     if (!board) {
       return res.status(404).json({
@@ -540,10 +609,10 @@ const deleteTask = async (req, res) => {
   }
 };
 
-// IMPORTANT: Export all controllers used in routes
 module.exports = {
   createTask,
-  getAllTasks, // Add this
+  createTaskFromBody,
+  getAllTasks,
   getTaskById,
   moveTask,
   updateTask,

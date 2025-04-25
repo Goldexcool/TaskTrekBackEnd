@@ -69,12 +69,11 @@ const addColumn = async (req, res) => {
         select: '_id'
       });
 
-    // Emit WebSocket event to all board members
     const io = req.app.get('io');
     if (io && boardWithMembers && boardWithMembers.members) {
       const memberIds = boardWithMembers.members
         .map(member => member.user._id.toString())
-        .filter(id => id !== req.user.id); // Don't notify the creator
+        .filter(id => id !== req.user.id); 
 
       memberIds.forEach(memberId => {
         io.to(`user:${memberId}`).emit('column:created', {
@@ -134,7 +133,6 @@ const updateColumn = async (req, res) => {
       });
     }
 
-    // Check user permission
     const hasPermission = await checkBoardEditPermission(board, req.user.id);
     if (!hasPermission) {
       return res.status(403).json({
@@ -143,10 +141,8 @@ const updateColumn = async (req, res) => {
       });
     }
 
-    // Store old values for activity log
     const oldName = column.name;
 
-    // Update column
     if (name !== undefined) column.name = name;
     if (order !== undefined) column.order = order;
 
@@ -285,7 +281,7 @@ const deleteColumn = async (req, res) => {
     if (io && board.members) {
       const memberIds = board.members
         .map(member => member.user.toString())
-        .filter(id => id !== req.user.id); // Don't notify the deleter
+        .filter(id => id !== req.user.id); 
 
       memberIds.forEach(memberId => {
         io.to(`user:${memberId}`).emit('column:deleted', {

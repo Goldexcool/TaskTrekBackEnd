@@ -1,10 +1,7 @@
 const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
 
-/**
- * Get all notifications for the authenticated user
- * @route GET /api/notifications
- */
+
 const getNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -83,7 +80,6 @@ const markAsRead = async (req, res) => {
         message: 'All notifications marked as read'
       });
     } else if (notificationIds && Array.isArray(notificationIds)) {
-      // Mark specific notifications as read
       await Notification.updateMany(
         { 
           _id: { $in: notificationIds },

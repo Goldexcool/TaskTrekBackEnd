@@ -3,51 +3,78 @@ const Team = require('../models/Team');
 const Board = require('../models/Board');
 const Task = require('../models/Task');
 const mongoose = require('mongoose');
-const { 
-  getUserActivityFeed, 
-  getBoardActivityFeed: getActivityForBoard,
-  getTaskActivityFeed: getActivityForTask,
-  getPersonalTaskActivityFeed: getActivityForPersonalTasks
-} = require('../services/activityService');
 
-/**
- * Get activity feed for the authenticated user
- * @route GET /api/activities
- * @access Private
- */
-const getActivityFeed = async (req, res) => {
+
+const getUserActivityFeed = async (req, res) => {
   try {
-    const options = {
-      limit: parseInt(req.query.limit) || 20,
-      page: parseInt(req.query.page) || 1,
-      actionType: req.query.actionType,
-      teamId: req.query.teamId,
-      boardId: req.query.boardId,
-      startDate: req.query.startDate,
-      endDate: req.query.endDate
-    };
+    const userId = req.user.id;
+    const limit = parseInt(req.query.limit) || 10;
+    const page = parseInt(req.query.page) || 1;
+    const skip = (page - 1) * limit;
     
-    const activityFeed = await getUserActivityFeed(req.user.id, options);
+    // Get user's boards
+    const boards = await Board.find({
+      $or: [
+        { createdBy: userId },
+        { 'members.user': userId }
+      ]
+    }).select('_id');
     
-    res.status(200).json({
+    const boardIds = boards.map(board => board._id);
+    
+    // Get user's teams
+    const teams = await Team.find({
+      $or: [
+        { owner: userId },
+        { admins: userId },
+        { 'members.user': userId }
+      ]
+    }).select('_id');
+    
+    const teamIds = teams.map(team => team._id);
+    
+    const activities = await Activity.find({
+      $or: [
+        { user: userId },
+        { boardId: { $in: boardIds } },
+        { teamId: { $in: teamIds } }
+      ]
+    })
+    .sort({ timestamp: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate('user', 'name username avatar');
+    
+    // Count total for pagination
+    const total = await Activity.countDocuments({
+      $or: [
+        { user: userId },
+        { boardId: { $in: boardIds } },
+        { teamId: { $in: teamIds } }
+      ]
+    });
+    
+    return res.status(200).json({
       success: true,
-      data: activityFeed.activities,
-      pagination: activityFeed.pagination
+      data: activities,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+        limit
+      }
     });
   } catch (error) {
     console.error('Error fetching activity feed:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || 'Error fetching activity feed'
+      message: 'Server error while fetching activity feed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
-/**
- * Get team activity feed
- * @route GET /api/activities/team/:teamId
- * @access Private
- */
+
 const getTeamActivityFeed = async (req, res) => {
   try {
     const { teamId } = req.params;
@@ -78,11 +105,7 @@ const getTeamActivityFeed = async (req, res) => {
   }
 };
 
-/**
- * Get board activity feed
- * @route GET /api/activities/board/:boardId
- * @access Private
- */
+
 const getBoardActivityFeed = async (req, res) => {
   try {
     const { boardId } = req.params;
@@ -133,11 +156,6 @@ const getBoardActivityFeed = async (req, res) => {
   }
 };
 
-/**
- * Get task activity feed
- * @route GET /api/activities/task/:taskId
- * @access Private
- */
 const getTaskActivityFeed = async (req, res) => {
   try {
     const { taskId } = req.params;
@@ -206,11 +224,6 @@ const getTaskActivityFeed = async (req, res) => {
   }
 };
 
-/**
- * Get personal tasks activity feed
- * @route GET /api/activities/personal-tasks
- * @access Private
- */
 const getPersonalTaskActivityFeed = async (req, res) => {
   try {
     const options = {
@@ -291,11 +304,6 @@ const getPersonalTaskActivityFeed = async (req, res) => {
   }
 };
 
-/**
- * Get activity feed for a specific user (admin only)
- * @route GET /api/activities/user/:userId
- * @access Private (Admin only)
- */
 const getUserActivityFeedById = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -326,11 +334,6 @@ const getUserActivityFeedById = async (req, res) => {
   }
 };
 
-/**
- * Generate retroactive activities for the authenticated user
- * @route POST /api/activities/generate-retroactive
- * @access Private
- */
 const generateRetroactiveActivities = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -415,7 +418,7 @@ const generateRetroactiveActivities = async (req, res) => {
 };
 
 module.exports = {
-  getActivityFeed,
+  getUserActivityFeed,
   getTeamActivityFeed,
   getBoardActivityFeed,
   getTaskActivityFeed,

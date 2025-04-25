@@ -10,31 +10,24 @@ const connectionOptions = {
   family: 4,
 };
 
-// MongoDB versions check
 if (mongoose.version.startsWith('5.')) {
   connectionOptions.useCreateIndex = true;
 }
 
-// Retry configuration
+
 const MAX_RETRIES = 3;
 let retryCount = 0;
 
-/**
- * Normalize MongoDB connection string to avoid deprecation warnings
- */
 const normalizeMongoDbUri = (uri) => {
   if (!uri) return uri;
   
   try {
-    // Check if it's already in the preferred format
     if (uri.startsWith('mongodb+srv://') && uri.includes('/?')) {
       const parts = uri.split('/?');
       if (parts.length === 2) {
-        // Extract host and add database name if missing
         const hostPart = parts[0];
         const queryPart = parts[1];
         
-        // Check if there's a database name after the hostname
         if (!hostPart.split('/')[3]) {
           // No database name, add 'tasktrek'
           return `${hostPart}/tasktrek?${queryPart}`;
@@ -42,17 +35,14 @@ const normalizeMongoDbUri = (uri) => {
       }
     }
     
-    // Already in good format or can't be safely normalized
     return uri;
   } catch (e) {
     console.warn('Error normalizing MongoDB URI:', e.message);
-    return uri; // Return original URI if there was an error
+    return uri; 
   }
 };
 
-/**
- * Connect to MongoDB with retry logic
- */
+
 const connectDB = async () => {
   try {
     console.log(`MongoDB connection attempt ${retryCount + 1}/${MAX_RETRIES + 1}...`);

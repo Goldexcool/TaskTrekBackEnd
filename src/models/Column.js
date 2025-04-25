@@ -1,12 +1,12 @@
 const mongoose = require('mongoose');
 
 const ColumnSchema = new mongoose.Schema({
-  title: {  // This should match what you're sending
+  title: { 
     type: String,
     required: [true, 'Please provide a column title'],
     trim: true
   },
-  board: {  // This should be "board" not "boardId"
+  board: { 
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Board',
     required: [true, 'Column must be associated with a board']

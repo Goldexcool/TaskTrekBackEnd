@@ -5,7 +5,6 @@ const User = require('../models/User');
 class UserService {
 
   static async hashPassword(password) {
-    // Use a higher cost factor for better security
     const salt = await bcrypt.genSalt(12);
     return bcrypt.hash(String(password), salt);
   }
@@ -13,7 +12,6 @@ class UserService {
 
   static async verifyPassword(password, hash) {
     try {
-      // Ensure both are strings
       return await bcrypt.compare(String(password), String(hash));
     } catch (error) {
       console.error('Password verification error:', error);
@@ -28,7 +26,6 @@ class UserService {
     // Hash the password
     const hashedPassword = await this.hashPassword(password);
     
-    // Create the user with hashed password
     return User.create({
       ...otherData,
       password: hashedPassword

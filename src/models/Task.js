@@ -62,7 +62,6 @@ const TaskSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes for faster queries
 TaskSchema.index({ board: 1 });
 TaskSchema.index({ column: 1, order: 1 });
 TaskSchema.index({ assignedTo: 1 });

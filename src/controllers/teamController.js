@@ -6,16 +6,10 @@ const { logTeamActivity } = require('../services/activityService');
 const Activity = require('../models/Activity');
 const Notification = require('../models/Notification');
 
-/**
- * Create a new team
- * @route POST /api/teams
- * @access Private
- */
 const createTeam = async (req, res) => {
   try {
     const { name, description, members } = req.body;
     
-    // Validate required fields
     if (!name) {
       return res.status(400).json({
         success: false,
@@ -27,10 +21,8 @@ const createTeam = async (req, res) => {
     let formattedMembers = [];
     
     if (members) {
-      // Handle different formats for members
       if (typeof members === 'string') {
         try {
-          // Try to parse if it's a JSON string
           const parsedMembers = JSON.parse(members);
           if (Array.isArray(parsedMembers)) {
             formattedMembers = parsedMembers.map(m => ({
@@ -78,7 +70,6 @@ const createTeam = async (req, res) => {
       .populate('owner', 'name username avatar')
       .populate('members.user', 'name username avatar email');
     
-    // Log activity using the service - wrapped in try/catch
     try {
       await logTeamActivity(req.user.id, 'created_team', team._id, {
         teamName: team.name
@@ -158,10 +149,7 @@ const getTeamById = async (req, res) => {
   }
 };
 
-/**
- * Update team
- * @route PUT /api/teams/:id
- */
+
 const updateTeam = async (req, res) => {
   try {
     const { id } = req.params;
@@ -219,7 +207,6 @@ const deleteTeam = async (req, res) => {
       });
     }
     
-    // Check if user is the owner of the team
     if (team.owner.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -227,7 +214,6 @@ const deleteTeam = async (req, res) => {
       });
     }
     
-    // Remove this team from all members' teams arrays
     await User.updateMany(
       { teams: team._id },
       { $pull: { teams: team._id } }
@@ -440,11 +426,9 @@ const removeMember = async (req, res) => {
       });
     }
     
-    // Remove user from team members
     team.members = team.members.filter(member => member.user.toString() !== userId);
     await team.save();
     
-    // Remove team from user's teams
     await User.findByIdAndUpdate(userId, {
       $pull: { teams: team._id }
     });
@@ -527,7 +511,6 @@ const changeRole = async (req, res) => {
     team.members[targetMemberIndex].role = role;
     await team.save();
     
-    // If we're changing the owner role to member, update the owner field to a different admin
     if (team.owner.toString() === userId && role === 'member') {
       const newAdmin = team.members.find(
         member => member.role === 'admin' && member.user.toString() !== userId
@@ -539,7 +522,6 @@ const changeRole = async (req, res) => {
       }
     }
     
-    // If we're promoting a member to admin, consider making them the owner if there is no owner
     if (role === 'admin' && !team.owner) {
       team.owner = userId;
       await team.save();
@@ -606,7 +588,6 @@ const transferOwnership = async (req, res) => {
       });
     }
     
-    // Make the target user an admin if they aren't already
     team.members[targetMemberIndex].role = 'admin';
     
     // Change the owner
@@ -635,7 +616,6 @@ const checkTeamExists = async (req, res) => {
   try {
     const { teamId } = req.params;
     
-    // Validate team ID format
     if (!teamId.match(/^[0-9a-fA-F]{24}$/)) {
       return res.status(200).json({
         success: true,
@@ -644,7 +624,6 @@ const checkTeamExists = async (req, res) => {
       });
     }
     
-    // Check if team exists
     const team = await Team.findById(teamId).select('name avatar');
     
     if (!team) {
@@ -730,9 +709,7 @@ const getTeamMembers = async (req, res) => {
   }
 };
 
-// @desc    Search for teams
-// @route   GET /api/teams/search
-// @access  Private
+
 const searchTeams = async (req, res) => {
   try {
     const { query } = req.query;
@@ -811,9 +788,7 @@ const inviteUser = async (req, res) => {
       });
     }
     
-    // Invite user logic...
     
-    // Log activity - wrapped in try/catch
     try {
       await logTeamActivity(
         'invite_user',
@@ -840,10 +815,7 @@ const inviteUser = async (req, res) => {
   }
 };
 
-/**
- * Add members to a team
- * @route POST /api/teams/:id/members
- */
+
 const addTeamMembers = async (req, res) => {
   try {
     const { id } = req.params;
@@ -867,7 +839,6 @@ const addTeamMembers = async (req, res) => {
       });
     }
 
-    // Check if current user has permission to add members
     if (team.owner.toString() !== req.user.id && 
         !team.admins.includes(req.user.id)) {
       return res.status(403).json({
@@ -876,14 +847,12 @@ const addTeamMembers = async (req, res) => {
       });
     }
 
-    // Process each member
     const results = {
       success: [],
       failed: []
     };
 
     for (const member of members) {
-      // Find user by email or ID
       const query = mongoose.Types.ObjectId.isValid(member) 
         ? { _id: member } 
         : { email: member };
@@ -1026,7 +995,6 @@ const addBoardMembers = async (req, res) => {
       });
     }
 
-    // Save board if any members were added
     if (results.success.length > 0) {
       await board.save();
     }

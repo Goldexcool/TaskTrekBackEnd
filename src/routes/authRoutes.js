@@ -8,17 +8,15 @@ const {
   sendWelcomeEmail 
 } = require('../utils/mailer');
 
-// Auth routes
 router.post('/signup', authController.signup);
 router.post('/login', authController.login);
-router.post('/refresh-token', authController.refreshTokenHandler); // <-- Fixed this line
+router.post('/refresh-token', authController.refreshTokenHandler); 
 router.post('/logout', authenticateToken, authController.logout);
 
 // Password reset routes
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password/:token', authController.resetPassword);
 
-// Add this to your authRoutes.js to test email functionality
 router.get('/test-email', async (req, res) => {
   try {
     const testUser = {

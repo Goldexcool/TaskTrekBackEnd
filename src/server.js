@@ -5,13 +5,10 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const app = require('./app');
 
-// Load environment variables
 dotenv.config();
 
-// Create HTTP server
 const server = http.createServer(app);
 
-// Initialize Socket.io with CORS settings
 const io = socketIO(server, {
   cors: {
     origin: process.env.ALLOWED_ORIGINS ? 
@@ -22,14 +19,11 @@ const io = socketIO(server, {
   }
 });
 
-// Make io instance available to our routes
 app.set('io', io);
 
-// Socket.io connection handler
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
   
-  // Join user to their personal room for targeted messages
   socket.on('join:user', (userId) => {
     if (userId) {
       socket.join(`user:${userId}`);
@@ -37,7 +31,6 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Join user to a board room for board-specific updates
   socket.on('join:board', (boardId) => {
     if (boardId) {
       socket.join(`board:${boardId}`);
@@ -45,7 +38,6 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Join user to team room for team-wide notifications
   socket.on('join:team', (teamId) => {
     if (teamId) {
       socket.join(`team:${teamId}`);
@@ -59,7 +51,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// MongoDB connection
 const connectDB = async () => {
   try {
     const maxRetries = 4;
@@ -71,7 +62,6 @@ const connectDB = async () => {
         retries++;
         console.log(`MongoDB connection attempt ${retries}/${maxRetries}...`);
         
-        // Extract username from connection string for logging (hide password)
         const uri = process.env.MONGODB_URI;
         const usernameMatch = uri.match(/\/\/(.*?):/);
         const username = usernameMatch ? usernameMatch[1] : 'unknown';
@@ -89,7 +79,6 @@ const connectDB = async () => {
           throw error;
         }
         
-        // Wait before retrying
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
