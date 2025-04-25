@@ -13,6 +13,10 @@ router.patch('/:id', authMiddleware.authenticateToken, taskController.updateTask
 
 router.patch('/:id/move', authMiddleware.authenticateToken, taskController.moveTask);
 
+router.patch('/:id/complete', authMiddleware.authenticateToken, taskController.completeTask);
+
+router.patch('/:id/reopen', authMiddleware.authenticateToken, taskController.reopenTask);
+
 router.delete('/:id', authMiddleware.authenticateToken, taskController.deleteTask);
 
 module.exports = router;

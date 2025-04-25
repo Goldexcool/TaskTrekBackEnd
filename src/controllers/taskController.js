@@ -612,12 +612,143 @@ const deleteTask = async (req, res) => {
   }
 };
 
+const completeTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    const board = await Board.findById(task.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated board not found'
+      });
+    }
+    
+    const hasPermission = await checkBoardPermission(board, req.user.id);
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to update this task'
+      });
+    }
+    
+    task.status = 'done';
+    task.completedAt = Date.now();
+    task.completedBy = req.user.id;
+    task.updatedAt = Date.now();
+    
+    await task.save();
+    
+    try {
+      await logTaskActivity(req.user.id, 'completed_task', task._id, task.board, task.column, {
+        taskTitle: task.title
+      });
+    } catch (logError) {
+      console.error('Activity logging error:', logError);
+    }
+    
+    const updatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate('board', 'title')
+      .populate('column', 'name');
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task marked as complete',
+      data: updatedTask
+    });
+  } catch (error) {
+    console.error('Complete task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while completing task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+const reopenTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    const board = await Board.findById(task.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated board not found'
+      });
+    }
+    
+    const hasPermission = await checkBoardPermission(board, req.user.id);
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to update this task'
+      });
+    }
+    
+    task.status = 'todo';
+    task.completedAt = null;
+    task.completedBy = null;
+    task.updatedAt = Date.now();
+    
+    await task.save();
+    
+    try {
+      await logTaskActivity(req.user.id, 'reopened_task', task._id, task.board, task.column, {
+        taskTitle: task.title
+      });
+    } catch (logError) {
+      console.error('Activity logging error:', logError);
+    }
+    
+    const updatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('board', 'title')
+      .populate('column', 'name');
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task reopened',
+      data: updatedTask
+    });
+  } catch (error) {
+    console.error('Reopen task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while reopening task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createTask,
   createTaskFromBody,
   getAllTasks,
   getTaskById,
-  moveTask,
   updateTask,
+  moveTask,
+  completeTask,
+  reopenTask,
   deleteTask
 };
