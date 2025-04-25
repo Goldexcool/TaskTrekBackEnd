@@ -7,71 +7,12 @@ const Activity = require('../models/Activity');
 const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
 
-const TaskSchema = new mongoose.Schema({
-  // Existing fields...
-  status: {
-    type: String,
-    enum: ['todo', 'in_progress', 'done'],
-    default: 'todo'
-  },
-  completedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null
-  },
-  completedAt: {
-    type: Date,
-    default: null
-  }
-  // Other existing fields...
-});
-
 /**
  * Check if a user has permission to access a board
  */
 const checkBoardPermission = async (board, userId) => {
-  if (board.createdBy && board.createdBy.toString() === userId) {
-    return true;
-  }
-  
-  if (board.members && Array.isArray(board.members)) {
-    const isMember = board.members.some(member => 
-      member.user && (
-        typeof member.user === 'string' 
-          ? member.user === userId
-          : member.user.toString() === userId
-      )
-    );
-    
-    if (isMember) {
-      return true;
-    }
-  }
-  
-  if (board.team) {
-    const team = await Team.findById(board.team);
-    if (team) {
-      // Team owner has admin privileges
-      if (team.owner && team.owner.toString() === userId) {
-        return true;
-      }
-      
-      if (team.admins && team.admins.some(adminId => adminId.toString() === userId)) {
-        return true;
-      }
-      
-      if (team.members && team.members.some(memberId => 
-        typeof memberId === 'object' 
-          ? memberId.user && memberId.user.toString() === userId
-          : memberId.toString() === userId
-      )) {
-        return true;
-      }
-    }
-  }
-  
-  // No permission
-  return false;
+  // Always return true to allow all users access to all tasks/boards
+  return true;
 };
 
 /**
@@ -266,52 +207,31 @@ const createTaskFromBody = async (req, res) => {
 
 const getAllTasks = async (req, res) => {
   try {
-    const userId = req.user.id;
+    // Get all tasks without filtering by user
+    const tasks = await Task.find({})
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .sort({ updatedAt: -1 });
     
-    const boards = await Board.find({
-      $or: [
-        { createdBy: userId },
-        { 'members.user': userId }
-      ]
-    });
-    
-    const boardIds = boards.map(board => board._id);
-    
-    const teams = await Team.find({
-      $or: [
-        { owner: userId },
-        { admins: userId },
-        { members: { $elemMatch: { user: userId } } }
-      ]
-    });
-    
-    const teamIds = teams.map(team => team._id);
-    
-    const tasks = await Task.find({
-      $or: [
-        { board: { $in: boardIds } },
-        { team: { $in: teamIds } },
-        { assignedTo: userId },
-        { createdBy: userId }
-      ]
-    })
-    .populate('createdBy', 'name username avatar')
-    .populate('assignedTo', 'name username avatar email')
-    .populate('completedBy', 'name username avatar')
-    .populate({
-      path: 'board',
-      select: 'title description'
-    })
-    .populate({
-      path: 'column',
-      select: 'name order'
-    })
-    .sort({ updatedAt: -1 });
+    // Add isCompleted flag based on status
+    const tasksWithStatus = tasks.map(task => ({
+      ...task._doc,
+      isCompleted: task.status === 'done'
+    }));
     
     return res.status(200).json({
       success: true,
-      count: tasks.length,
-      data: tasks
+      count: tasksWithStatus.length,
+      data: tasksWithStatus
     });
   } catch (error) {
     console.error('Get all tasks error:', error);
@@ -322,7 +242,6 @@ const getAllTasks = async (req, res) => {
     });
   }
 };
-
 
 const getTaskById = async (req, res) => {
   try {
@@ -359,38 +278,12 @@ const getTaskById = async (req, res) => {
       });
     }
 
-    if (!task.board) {
-      return res.status(404).json({
-        success: false,
-        message: 'Associated board not found'
-      });
-    }
-
-    // If board is populated as an object, use it directly
-    let boardToCheck = task.board;
-    
-    // If board is just an ID, fetch the full board
-    if (!task.board.createdBy) {
-      boardToCheck = await Board.findById(task.board);
-      if (!boardToCheck) {
-        return res.status(404).json({
-          success: false,
-          message: 'Associated board not found'
-        });
-      }
-    }
-
-    const hasPermission = await checkBoardPermission(boardToCheck, req.user.id);
-    if (!hasPermission) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to access this task'
-      });
-    }
-
     return res.status(200).json({
       success: true,
-      data: task
+      data: {
+        ...task._doc,
+        isCompleted: task.status === 'done'
+      }
     });
   } catch (error) {
     console.error('Get task by ID error:', error);
@@ -600,33 +493,15 @@ const deleteTask = async (req, res) => {
       });
     }
     
-    const board = await Board.findById(task.board);
-    if (!board) {
-      return res.status(404).json({
-        success: false,
-        message: 'Associated board not found'
-      });
-    }
-    
-    const hasPermission = await checkBoardPermission(board, req.user.id);
-    if (!hasPermission) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to delete this task'
-      });
-    }
-    
+    // Just delete the task without board permission checks
     await Task.deleteOne({ _id: id });
     
     try {
       await Activity.create({
         user: req.user.id,
         action: 'deleted_task',
-        boardId: task.board,
-        columnId: task.column,
-        teamId: board.team,
         metadata: { 
-          taskTitle: task.title,
+          taskTitle: task.title || 'Unknown task',
           taskId: task._id.toString()
         }
       });
@@ -822,30 +697,6 @@ const getTasksByColumn = async (req, res) => {
       });
     }
     
-    const column = await Column.findById(columnId);
-    if (!column) {
-      return res.status(404).json({
-        success: false,
-        message: 'Column not found'
-      });
-    }
-    
-    const board = await Board.findById(column.board);
-    if (!board) {
-      return res.status(404).json({
-        success: false,
-        message: 'Associated board not found'
-      });
-    }
-    
-    const hasPermission = await checkBoardPermission(board, req.user.id);
-    if (!hasPermission) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to access this column'
-      });
-    }
-    
     const tasks = await Task.find({ column: columnId })
       .sort({ order: 1 })
       .populate('createdBy', 'name username avatar')
@@ -860,10 +711,16 @@ const getTasksByColumn = async (req, res) => {
         select: 'name order'
       });
     
+    // Add isCompleted flag
+    const tasksWithStatus = tasks.map(task => ({
+      ...task._doc,
+      isCompleted: task.status === 'done'
+    }));
+    
     return res.status(200).json({
       success: true,
       count: tasks.length,
-      data: tasks
+      data: tasksWithStatus
     });
   } catch (error) {
     console.error('Get tasks by column error:', error);
