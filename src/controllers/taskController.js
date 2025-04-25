@@ -146,13 +146,8 @@ const createTaskFromBody = async (req, res) => {
       });
     }
 
-    const hasPermission = await checkBoardPermission(board, req.user.id);
-    if (!hasPermission) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to create tasks in this board'
-      });
-    }
+    // Set default assignee to creator if not specified
+    const taskAssignee = assignedTo || req.user.id;
 
     let order = position;
     if (order === undefined) {
@@ -168,7 +163,7 @@ const createTaskFromBody = async (req, res) => {
       description: description || '',
       priority: priority || 'medium',
       dueDate,
-      assignedTo,
+      assignedTo: taskAssignee,
       createdBy: req.user.id,
       board: boardId,
       column: columnId,
@@ -178,22 +173,47 @@ const createTaskFromBody = async (req, res) => {
 
     const populatedTask = await Task.findById(task._id)
       .populate('createdBy', 'name username avatar')
-      .populate('assignedTo', 'name username avatar email');
-
-    try {
-      await logTaskActivity(req.user.id, 'created_task', task._id, boardId, columnId, { 
-        taskTitle: title,
-        priority,
-        assignedTo: assignedTo || null
+      .populate('assignedTo', 'name username avatar email')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
       });
-    } catch (logError) {
-      console.error('Activity logging error:', logError);
+
+    // Create activity directly instead of using the service
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: 'created_task',
+        taskId: task._id,
+        boardId,
+        columnId,
+        teamId: board.team,
+        description: `Created task "${task.title}"`,
+        metadata: { 
+          taskTitle: title,
+          priority,
+          assignedTo: taskAssignee
+        }
+      });
+    } catch (activityError) {
+      console.error('Activity logging error:', activityError);
     }
 
     return res.status(201).json({
       success: true,
       message: 'Task created successfully',
-      data: populatedTask
+      data: {
+        ...populatedTask._doc,
+        isCompleted: false
+      }
     });
   } catch (error) {
     console.error('Create task error:', error);
@@ -419,24 +439,12 @@ const updateTask = async (req, res) => {
       });
     }
     
-    const board = await Board.findById(task.board);
-    if (!board) {
-      return res.status(404).json({
-        success: false,
-        message: 'Associated board not found'
-      });
-    }
-    
-    const hasPermission = await checkBoardPermission(board, req.user.id);
-    if (!hasPermission) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to update this task'
-      });
-    }
-    
     const originalTitle = task.title;
-    const originalAssignedTo = task.assignedTo ? task.assignedTo.toString() : null;
+    const originalAssignedTo = task.assignedTo;
+    const hasAssigneeChanged = assignedTo !== undefined && 
+      ((!originalAssignedTo && assignedTo) || 
+       (originalAssignedTo && !assignedTo) ||
+       (originalAssignedTo && assignedTo && originalAssignedTo.toString() !== assignedTo.toString()));
     
     // Update task fields
     if (title) task.title = title;
@@ -449,18 +457,40 @@ const updateTask = async (req, res) => {
     task.updatedAt = Date.now();
     await task.save();
     
+    // Create appropriate activity log based on changes
+    let actionType = 'updated_task';
+    let activityDescription = `Updated task "${task.title}"`;
+    
+    // Special handling for assignment changes
+    if (hasAssigneeChanged) {
+      if (!originalAssignedTo && assignedTo) {
+        actionType = 'assigned_task';
+        activityDescription = `Assigned task "${task.title}" to a user`;
+      } else if (originalAssignedTo && !assignedTo) {
+        actionType = 'unassigned_task';
+        activityDescription = `Unassigned user from task "${task.title}"`;
+      } else {
+        actionType = 'reassigned_task';
+        activityDescription = `Reassigned task "${task.title}" to another user`;
+      }
+    }
+    
     // Log activity
     await Activity.create({
       user: req.user.id,
-      action: 'updated_task',
+      action: actionType,
       taskId: task._id,
       boardId: task.board,
       columnId: task.column,
+      description: activityDescription,
       metadata: {
         taskTitle: task.title,
         changes: {
           title: title !== originalTitle ? { from: originalTitle, to: title } : undefined,
-          assignedTo: assignedTo !== originalAssignedTo ? { from: originalAssignedTo, to: assignedTo } : undefined,
+          assignedTo: hasAssigneeChanged ? { 
+            from: originalAssignedTo ? originalAssignedTo.toString() : null, 
+            to: assignedTo || null 
+          } : undefined
         }
       }
     });
@@ -468,12 +498,28 @@ const updateTask = async (req, res) => {
     // Return updated task
     const updatedTask = await Task.findById(id)
       .populate('createdBy', 'name username avatar')
-      .populate('assignedTo', 'name username avatar email');
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      });
     
     return res.status(200).json({
       success: true,
       message: 'Task updated successfully',
-      data: updatedTask
+      data: {
+        ...updatedTask._doc,
+        isCompleted: updatedTask.status === 'done'
+      }
     });
   } catch (error) {
     console.error('Update task error:', error);
