@@ -742,11 +742,76 @@ const reopenTask = async (req, res) => {
   }
 };
 
+const getTasksByColumn = async (req, res) => {
+  try {
+    const { columnId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(columnId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid column ID format'
+      });
+    }
+    
+    const column = await Column.findById(columnId);
+    if (!column) {
+      return res.status(404).json({
+        success: false,
+        message: 'Column not found'
+      });
+    }
+    
+    const board = await Board.findById(column.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated board not found'
+      });
+    }
+    
+    const hasPermission = await checkBoardPermission(board, req.user.id);
+    if (!hasPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to access this column'
+      });
+    }
+    
+    const tasks = await Task.find({ column: columnId })
+      .sort({ order: 1 })
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      });
+    
+    return res.status(200).json({
+      success: true,
+      count: tasks.length,
+      data: tasks
+    });
+  } catch (error) {
+    console.error('Get tasks by column error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching column tasks',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createTask,
   createTaskFromBody,
   getAllTasks,
   getTaskById,
+  getTasksByColumn,
   updateTask,
   moveTask,
   completeTask,

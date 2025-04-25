@@ -5,6 +5,8 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 router.get('/all', authMiddleware.authenticateToken, taskController.getAllTasks);
 
+router.get('/column/:columnId', authMiddleware.authenticateToken, taskController.getTasksByColumn);
+
 router.post('/', authMiddleware.authenticateToken, taskController.createTaskFromBody);
 
 router.get('/:id', authMiddleware.authenticateToken, taskController.getTaskById);

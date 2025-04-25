@@ -1,5 +1,5 @@
 const Activity = require('../models/Activity');
-
+const Task = require('../models/Task');
 
 const generateDescription = (action, metadata = {}) => {
   switch (action) {
@@ -22,21 +22,25 @@ const generateDescription = (action, metadata = {}) => {
 
 const logTaskActivity = async (userId, action, taskId, boardId, columnId, metadata = {}) => {
   try {
-    await Activity.create({
+    const task = await Task.findById(taskId);
+    const taskTitle = task ? task.title : (metadata.taskTitle || 'Unknown task');
+    
+    const activityData = {
       user: userId,
       action,
-      description: generateDescription(action, metadata),
+      description: generateDescription(action, {...metadata, taskTitle}),
       taskId,
       boardId,
       columnId,
       metadata,
       timestamp: Date.now()
-    });
+    };
+    
+    await Activity.create(activityData);
   } catch (error) {
     console.error(`Error logging task activity (${action}):`, error);
   }
 };
-
 
 const logBoardActivity = async (userId, action, boardId, metadata = {}) => {
   try {
@@ -52,7 +56,6 @@ const logBoardActivity = async (userId, action, boardId, metadata = {}) => {
     console.error(`Error logging board activity (${action}):`, error);
   }
 };
-
 
 const logTeamActivity = async (userId, action, teamId, metadata = {}) => {
   try {
