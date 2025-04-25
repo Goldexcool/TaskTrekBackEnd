@@ -440,16 +440,19 @@ const updateTask = async (req, res) => {
     }
     
     const originalTitle = task.title;
-    const originalAssignedTo = task.assignedTo;
-    const hasAssigneeChanged = assignedTo !== undefined && 
-      ((!originalAssignedTo && assignedTo) || 
-       (originalAssignedTo && !assignedTo) ||
-       (originalAssignedTo && assignedTo && originalAssignedTo.toString() !== assignedTo.toString()));
+    const originalAssignedTo = task.assignedTo ? task.assignedTo.toString() : null;
+    
+    // Check if assignee has changed
+    let hasAssigneeChanged = false;
+    if (assignedTo !== undefined) {
+      const newAssignedTo = assignedTo ? assignedTo.toString() : null;
+      hasAssigneeChanged = originalAssignedTo !== newAssignedTo;
+    }
     
     // Update task fields
-    if (title) task.title = title;
+    if (title !== undefined) task.title = title;
     if (description !== undefined) task.description = description;
-    if (priority) task.priority = priority;
+    if (priority !== undefined) task.priority = priority;
     if (dueDate !== undefined) task.dueDate = dueDate;
     if (assignedTo !== undefined) task.assignedTo = assignedTo || null;
     if (status !== undefined) task.status = status;
@@ -463,10 +466,12 @@ const updateTask = async (req, res) => {
     
     // Special handling for assignment changes
     if (hasAssigneeChanged) {
-      if (!originalAssignedTo && assignedTo) {
+      const newAssignedTo = assignedTo ? assignedTo.toString() : null;
+      
+      if (!originalAssignedTo && newAssignedTo) {
         actionType = 'assigned_task';
         activityDescription = `Assigned task "${task.title}" to a user`;
-      } else if (originalAssignedTo && !assignedTo) {
+      } else if (originalAssignedTo && !newAssignedTo) {
         actionType = 'unassigned_task';
         activityDescription = `Unassigned user from task "${task.title}"`;
       } else {
@@ -476,26 +481,31 @@ const updateTask = async (req, res) => {
     }
     
     // Log activity
-    await Activity.create({
-      user: req.user.id,
-      action: actionType,
-      taskId: task._id,
-      boardId: task.board,
-      columnId: task.column,
-      description: activityDescription,
-      metadata: {
-        taskTitle: task.title,
-        changes: {
-          title: title !== originalTitle ? { from: originalTitle, to: title } : undefined,
-          assignedTo: hasAssigneeChanged ? { 
-            from: originalAssignedTo ? originalAssignedTo.toString() : null, 
-            to: assignedTo || null 
-          } : undefined
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: actionType,
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column,
+        description: activityDescription,
+        metadata: {
+          taskTitle: task.title,
+          changes: {
+            title: title !== originalTitle ? { from: originalTitle, to: title } : undefined,
+            assignedTo: hasAssigneeChanged ? { 
+              from: originalAssignedTo, 
+              to: assignedTo ? assignedTo.toString() : null
+            } : undefined,
+            priority: priority !== task.priority ? { from: task.priority, to: priority } : undefined
+          }
         }
-      }
-    });
+      });
+    } catch (activityError) {
+      console.error('Activity logging error:', activityError);
+    }
     
-    // Return updated task
+    // Return updated task with all necessary populated fields
     const updatedTask = await Task.findById(id)
       .populate('createdBy', 'name username avatar')
       .populate('assignedTo', 'name username avatar email')
