@@ -239,15 +239,15 @@ const deleteTeam = async (req, res) => {
 const addMember = async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, role = 'member' } = req.body;
-
+    const { email, role } = req.body;
+    
     if (!email) {
       return res.status(400).json({
         success: false,
         message: 'Email is required'
       });
     }
-
+    
     // Find the team
     const team = await Team.findById(id);
     if (!team) {
@@ -256,134 +256,96 @@ const addMember = async (req, res) => {
         message: 'Team not found'
       });
     }
-
+    
     // Check if user is authorized to add members
-    if (!team.owner || (team.owner.toString() !== req.user.id && 
-        !(team.admins && team.admins.includes(req.user.id)))) {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to add members to this team'
-      });
+    if (team.owner.toString() !== req.user.id) {
+      const isAdmin = team.members.some(member => 
+        member.user && member.user.toString() === req.user.id && member.role === 'admin'
+      );
+      
+      if (!isAdmin) {
+        return res.status(403).json({
+          success: false,
+          message: 'You are not authorized to add members to this team'
+        });
+      }
     }
-
-    // Check if user with this email exists
+    
+    // Find the user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'No user registered with this email',
-        userNotFound: true
+        message: 'User with that email not found'
       });
     }
-
-    // Check if user is already a member - SAFELY CHECK ARRAYS
-    const isMember = team.members && team.members.some(memberId => 
-      memberId.toString() === user._id.toString());
-    const isAdmin = team.admins && team.admins.some(adminId => 
-      adminId.toString() === user._id.toString());
-    const isOwner = team.owner && team.owner.toString() === user._id.toString();
     
-    if (isMember || isAdmin || isOwner) {
+    // Check if user is already a member
+    const isMember = team.members.some(member => 
+      member.user && member.user.toString() === user._id.toString()
+    );
+    
+    if (isMember) {
       return res.status(400).json({
         success: false,
-        message: `User is already a ${isOwner ? 'owner' : isAdmin ? 'admin' : 'member'} of this team`
+        message: 'User is already a member of this team'
       });
     }
-
-    // Initialize members and admins arrays if they don't exist
-    if (!team.members) team.members = [];
-    if (!team.admins) team.admins = [];
-
-    // Add user to appropriate role
-    if (role === 'admin') {
-      team.admins.push(user._id);
-    } else {
-      team.members.push(user._id);
-    }
-
+    
+    // Add user to team members
+    team.members.push({
+      user: user._id,  // Make sure we're setting the user field
+      role: role || 'viewer'
+    });
+    
     await team.save();
-
-    // Get request user details for notification
-    const requestUser = await User.findById(req.user.id).select('name username avatar');
-
-    // Create activity record
+    
+    // Populate the team data
+    const updatedTeam = await Team.findById(id)
+      .populate('owner', 'name username avatar')
+      .populate('members.user', 'name username avatar email');
+    
+    // Log the activity
     try {
       await Activity.create({
         user: req.user.id,
         action: 'added_member',
         teamId: team._id,
-        targetUser: user._id,
-        metadata: { role }
+        description: `Added a member to team "${team.name}"`,
+        metadata: {
+          teamName: team.name,
+          memberEmail: email,
+          memberRole: role || 'viewer'
+        }
       });
     } catch (activityError) {
-      console.error('Failed to create activity record:', activityError);
-      // Continue execution - don't fail the main functionality
+      console.error('Failed to log team activity:', activityError);
     }
-
+    
     // Create notification for the added user
-    const notification = await Notification.create({
-      recipient: user._id,
-      type: 'team_invitation_accepted',
-      message: `You've been added to ${team.name} as a ${role} by ${requestUser.name || requestUser.username}`,
-      relatedTeam: team._id,
-      initiator: req.user.id,
-      read: false
-    });
-
-    // Send real-time notification via Socket.io
-    const io = req.app.get('io');
-    if (io) {
-      // Format the notification for display
-      const formattedNotification = {
-        _id: notification._id,
-        type: notification.type,
-        message: notification.message,
-        relatedTeam: {
-          _id: team._id,
-          name: team.name
-        },
-        initiator: {
-          _id: requestUser._id,
-          name: requestUser.name,
-          username: requestUser.username,
-          avatar: requestUser.avatar
-        },
-        read: false,
-        createdAt: notification.createdAt
-      };
-      
-      // Emit to user's room
-      io.to(`user:${user._id}`).emit('notification', formattedNotification);
-      
-      // Emit team update to inform user about new team
-      io.to(`user:${user._id}`).emit('team:added', {
-        teamId: team._id,
-        teamName: team.name,
-        role: role,
-        addedBy: requestUser.name || requestUser.username
+    try {
+      await Notification.create({
+        recipient: user._id,
+        type: 'team_invite',
+        message: `You have been added to the team "${team.name}"`,
+        sender: req.user.id,
+        relatedTeam: team._id
       });
+    } catch (notifError) {
+      console.error('Failed to create notification:', notifError);
     }
-
+    
     return res.status(200).json({
       success: true,
       message: 'Member added successfully',
-      data: {
-        user: {
-          _id: user._id,
-          email: user.email,
-          name: user.name,
-          username: user.username
-        },
-        role,
-        joinedAt: new Date()
-      }
+      data: updatedTeam
     });
   } catch (error) {
     console.error('Add team member error:', error);
     return res.status(500).json({
       success: false,
       message: 'Server error while adding team member',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: error.message
     });
   }
 };

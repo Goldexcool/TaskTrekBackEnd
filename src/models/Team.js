@@ -8,7 +8,7 @@ const TeamMemberSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['viewer', 'editor', 'admin'],
+    enum: ['admin', 'member', 'viewer'],
     default: 'viewer'
   },
   joinedAt: {
@@ -36,7 +36,18 @@ const TeamSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
-  members: [TeamMemberSchema],
+  members: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    role: {
+      type: String,
+      enum: ['admin', 'member', 'viewer'],
+      default: 'viewer'
+    }
+  }],
   createdAt: {
     type: Date,
     default: Date.now
