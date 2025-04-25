@@ -278,6 +278,7 @@ const getAllTasks = async (req, res) => {
     })
     .populate('createdBy', 'name username avatar')
     .populate('assignedTo', 'name username avatar email')
+    .populate('completedBy', 'name username avatar')
     .populate({
       path: 'board',
       select: 'title description'
@@ -556,7 +557,6 @@ const deleteTask = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Find the task
     const task = await Task.findById(id);
     if (!task) {
       return res.status(404).json({
@@ -573,7 +573,6 @@ const deleteTask = async (req, res) => {
       });
     }
     
-    // Check user permission
     const hasPermission = await checkBoardPermission(board, req.user.id);
     if (!hasPermission) {
       return res.status(403).json({
@@ -582,21 +581,23 @@ const deleteTask = async (req, res) => {
       });
     }
     
-    // Delete the task
-    await task.deleteOne();
+    await Task.deleteOne({ _id: id });
     
-    // Log activity
-    await Activity.create({
-      user: req.user.id,
-      action: 'deleted_task',
-      boardId: task.board,
-      columnId: task.column,
-      teamId: board.team,
-      metadata: { 
-        taskTitle: task.title,
-        taskId: task._id.toString()
-      }
-    });
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: 'deleted_task',
+        boardId: task.board,
+        columnId: task.column,
+        teamId: board.team,
+        metadata: { 
+          taskTitle: task.title,
+          taskId: task._id.toString()
+        }
+      });
+    } catch (error) {
+      console.error('Failed to log task deletion:', error);
+    }
     
     return res.status(200).json({
       success: true,
