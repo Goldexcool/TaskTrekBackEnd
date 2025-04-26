@@ -452,6 +452,12 @@ const updateTask = async (req, res) => {
     const { id } = req.params;
     const { title, description, priority, dueDate, assignedTo, status } = req.body;
     
+    console.log('Update task request received:', {
+      id,
+      assignedTo,
+      otherFields: { title, description, priority, dueDate, status }
+    });
+    
     // Find the task
     const task = await Task.findById(id);
     if (!task) {
@@ -461,73 +467,76 @@ const updateTask = async (req, res) => {
       });
     }
     
-    const originalTitle = task.title;
-    const originalAssignedTo = task.assignedTo ? task.assignedTo.toString() : null;
+    // Handle assignedTo specially
+    let assignedUser = null;
+    let targetAssigneeId = null;
     
-    // Check if assignee has changed
-    let hasAssigneeChanged = false;
     if (assignedTo !== undefined) {
-      const newAssignedTo = assignedTo ? assignedTo.toString() : null;
-      hasAssigneeChanged = originalAssignedTo !== newAssignedTo;
-    }
-    
-    // Update task fields
-    if (title !== undefined) task.title = title;
-    if (description !== undefined) task.description = description;
-    if (priority !== undefined) task.priority = priority;
-    if (dueDate !== undefined) task.dueDate = dueDate;
-    if (assignedTo !== undefined) task.assignedTo = assignedTo || null;
-    if (status !== undefined) task.status = status;
-    
-    task.updatedAt = Date.now();
-    await task.save();
-    
-    // Create appropriate activity log based on changes
-    let actionType = 'updated_task';
-    let activityDescription = `Updated task "${task.title}"`;
-    
-    // Special handling for assignment changes
-    if (hasAssigneeChanged) {
-      const newAssignedTo = assignedTo ? assignedTo.toString() : null;
-      
-      if (!originalAssignedTo && newAssignedTo) {
-        actionType = 'assigned_task';
-        activityDescription = `Assigned task "${task.title}" to a user`;
-      } else if (originalAssignedTo && !newAssignedTo) {
-        actionType = 'unassigned_task';
-        activityDescription = `Unassigned user from task "${task.title}"`;
-      } else {
-        actionType = 'reassigned_task';
-        activityDescription = `Reassigned task "${task.title}" to another user`;
-      }
-    }
-    
-    // Log activity
-    try {
-      await Activity.create({
-        user: req.user.id,
-        action: actionType,
-        taskId: task._id,
-        boardId: task.board,
-        columnId: task.column,
-        description: activityDescription,
-        metadata: {
-          taskTitle: task.title,
-          changes: {
-            title: title !== originalTitle ? { from: originalTitle, to: title } : undefined,
-            assignedTo: hasAssigneeChanged ? { 
-              from: originalAssignedTo, 
-              to: assignedTo ? assignedTo.toString() : null
-            } : undefined,
-            priority: priority !== task.priority ? { from: task.priority, to: priority } : undefined
+      if (assignedTo) {
+        // Try to find user by ID, name or username
+        if (mongoose.Types.ObjectId.isValid(assignedTo)) {
+          assignedUser = await User.findById(assignedTo);
+          if (assignedUser) {
+            targetAssigneeId = assignedUser._id;
+          }
+        } else {
+          // Try to find by name or username
+          assignedUser = await User.findOne({
+            $or: [
+              { name: { $regex: new RegExp(assignedTo, 'i') } },
+              { username: { $regex: new RegExp(assignedTo, 'i') } }
+            ]
+          });
+          if (assignedUser) {
+            targetAssigneeId = assignedUser._id;
           }
         }
-      });
-    } catch (activityError) {
-      console.error('Activity logging error:', activityError);
+        
+        if (!assignedUser) {
+          return res.status(404).json({
+            success: false,
+            message: `User "${assignedTo}" not found`
+          });
+        }
+      } else {
+        // If assignedTo is null, empty string, or false, explicitly set to null
+        targetAssigneeId = null;
+      }
+      
+      console.log(
+        'Assignee determination:', 
+        targetAssigneeId ? 
+          `Will assign to: ${assignedUser.name} (${targetAssigneeId})` : 
+          'Will clear assignee'
+      );
     }
     
-    // Return updated task with all necessary populated fields
+    // Build update object
+    const updateData = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (priority !== undefined) updateData.priority = priority;
+    if (dueDate !== undefined) updateData.dueDate = dueDate;
+    if (status !== undefined) updateData.status = status;
+    if (assignedTo !== undefined) updateData.assignedTo = targetAssigneeId;
+    updateData.updatedAt = new Date();
+    
+    console.log('Update operation with data:', updateData);
+    
+    // Perform direct update
+    const result = await Task.updateOne(
+      { _id: id },
+      { $set: updateData }
+    );
+    
+    console.log('Update result:', result);
+    
+    if (result.modifiedCount !== 1) {
+      console.error('Task update failed or no changes made:', result);
+      // Continue anyway as this might just mean no actual changes were needed
+    }
+    
+    // Get the updated task
     const updatedTask = await Task.findById(id)
       .populate('createdBy', 'name username avatar')
       .populate('assignedTo', 'name username avatar email')
@@ -544,6 +553,13 @@ const updateTask = async (req, res) => {
         path: 'team',
         select: 'name'
       });
+      
+    console.log('Task after update:', {
+      id: updatedTask._id,
+      assignedTo: updatedTask.assignedTo ? 
+        `${updatedTask.assignedTo.name || updatedTask.assignedTo.username}` : 
+        'No assignee'
+    });
     
     return res.status(200).json({
       success: true,
@@ -563,242 +579,9 @@ const updateTask = async (req, res) => {
   }
 };
 
-const deleteTask = async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const task = await Task.findById(id);
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: 'Task not found'
-      });
-    }
-    
-    // Just delete the task without board permission checks
-    await Task.deleteOne({ _id: id });
-    
-    try {
-      await Activity.create({
-        user: req.user.id,
-        action: 'deleted_task',
-        metadata: { 
-          taskTitle: task.title || 'Unknown task',
-          taskId: task._id.toString()
-        }
-      });
-    } catch (error) {
-      console.error('Failed to log task deletion:', error);
-    }
-    
-    return res.status(200).json({
-      success: true,
-      message: 'Task deleted successfully'
-    });
-  } catch (error) {
-    console.error('Delete task error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error while deleting task',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-const completeTask = async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const task = await Task.findById(id);
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: 'Task not found'
-      });
-    }
-    
-    // Skip board check entirely
-    
-    task.status = 'done';
-    task.completedAt = new Date();
-    task.completedBy = req.user.id;
-    task.updatedAt = new Date();
-    
-    await task.save();
-    
-    try {
-      await Activity.create({
-        user: req.user.id,
-        action: 'completed_task',
-        taskId: task._id,
-        boardId: task.board,
-        columnId: task.column,
-        description: `Completed task "${task.title}"`,
-        metadata: {
-          taskTitle: task.title
-        }
-      });
-    } catch (logError) {
-      console.error('Activity logging error:', logError);
-    }
-    
-    const updatedTask = await Task.findById(id)
-      .populate('createdBy', 'name username avatar')
-      .populate('assignedTo', 'name username avatar email')
-      .populate('completedBy', 'name username avatar')
-      .populate({
-        path: 'board',
-        select: 'title description'
-      })
-      .populate({
-        path: 'column',
-        select: 'name order'
-      })
-      .populate({
-        path: 'team',
-        select: 'name'
-      });
-    
-    return res.status(200).json({
-      success: true,
-      message: 'Task marked as complete',
-      data: {
-        ...updatedTask._doc,
-        isCompleted: true
-      }
-    });
-  } catch (error) {
-    console.error('Complete task error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error while completing task',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-const reopenTask = async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const task = await Task.findById(id);
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: 'Task not found'
-      });
-    }
-    
-    // Skip board check entirely
-    
-    task.status = 'todo';
-    task.completedAt = null;
-    task.completedBy = null;
-    task.updatedAt = new Date();
-    
-    await task.save();
-    
-    try {
-      await Activity.create({
-        user: req.user.id,
-        action: 'reopened_task',
-        taskId: task._id,
-        boardId: task.board,
-        columnId: task.column,
-        description: `Reopened task "${task.title}"`,
-        metadata: {
-          taskTitle: task.title
-        }
-      });
-    } catch (logError) {
-      console.error('Activity logging error:', logError);
-    }
-    
-    const updatedTask = await Task.findById(id)
-      .populate('createdBy', 'name username avatar')
-      .populate('assignedTo', 'name username avatar email')
-      .populate({
-        path: 'board',
-        select: 'title description'
-      })
-      .populate({
-        path: 'column',
-        select: 'name order'
-      })
-      .populate({
-        path: 'team',
-        select: 'name'
-      });
-    
-    return res.status(200).json({
-      success: true,
-      message: 'Task reopened',
-      data: {
-        ...updatedTask._doc,
-        isCompleted: false
-      }
-    });
-  } catch (error) {
-    console.error('Reopen task error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error while reopening task',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-const getTasksByColumn = async (req, res) => {
-  try {
-    const { columnId } = req.params;
-    
-    if (!mongoose.Types.ObjectId.isValid(columnId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid column ID format'
-      });
-    }
-    
-    const tasks = await Task.find({ column: columnId })
-      .sort({ order: 1 })
-      .populate('createdBy', 'name username avatar')
-      .populate('assignedTo', 'name username avatar email')
-      .populate('completedBy', 'name username avatar')
-      .populate({
-        path: 'board',
-        select: 'title description'
-      })
-      .populate({
-        path: 'column',
-        select: 'name order'
-      })
-      .populate({
-        path: 'team',
-        select: 'name'
-      });
-    
-    // Add isCompleted flag
-    const tasksWithStatus = tasks.map(task => ({
-      ...task._doc,
-      isCompleted: task.status === 'done'
-    }));
-    
-    return res.status(200).json({
-      success: true,
-      count: tasks.length,
-      data: tasksWithStatus
-    });
-  } catch (error) {
-    console.error('Get tasks by column error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error while fetching column tasks',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-// Assign a task to a user
+/**
+ * Assign a task to a user
+ */
 const assignTask = async (req, res) => {
   try {
     const { id } = req.params;
@@ -811,6 +594,9 @@ const assignTask = async (req, res) => {
       });
     }
     
+    console.log('Attempting to assign task', id, 'to user', userId);
+    
+    // First, find the task
     const task = await Task.findById(id);
     if (!task) {
       return res.status(404).json({
@@ -824,13 +610,16 @@ const assignTask = async (req, res) => {
     let assignedUser = null;
     
     if (!mongoose.Types.ObjectId.isValid(userId)) {
+      console.log('User ID is not a valid ObjectId, searching by name/username');
       // Try a more flexible search with case insensitivity for name or username
       const user = await User.findOne({
         $or: [
-          { name: { $regex: new RegExp('^' + userId + '$', 'i') } },
-          { username: { $regex: new RegExp('^' + userId + '$', 'i') } }
+          { name: { $regex: new RegExp(userId, 'i') } }, // Remove ^ and $ for more flexible matching
+          { username: { $regex: new RegExp(userId, 'i') } }
         ]
       });
+      
+      console.log('User search result:', user ? `Found: ${user.name}` : 'Not found');
       
       if (!user) {
         return res.status(404).json({
@@ -842,6 +631,7 @@ const assignTask = async (req, res) => {
       assignedUser = user;
     } else {
       // Check if user exists when a valid ObjectId is provided
+      console.log('Looking up user by ObjectId');
       const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({
@@ -852,25 +642,22 @@ const assignTask = async (req, res) => {
       assignedUser = user;
     }
     
-    console.log(`Assigning task to user: ${assignedUser.name} (${targetUserId})`);
+    console.log(`Found user to assign: ${assignedUser.name || assignedUser.username} (${targetUserId})`);
     
-    // Use findByIdAndUpdate instead of save() to ensure atomic operation
-    const updatedTask = await Task.findByIdAndUpdate(
-      id,
-      { 
-        assignedTo: targetUserId,
-        updatedAt: Date.now()
-      },
-      { 
-        new: true,
-        runValidators: true 
-      }
+    // Direct update with minimal fields to avoid validation issues
+    console.log('Performing direct update operation');
+    const result = await Task.updateOne(
+      { _id: id },
+      { $set: { assignedTo: targetUserId, updatedAt: new Date() } }
     );
     
-    if (!updatedTask || !updatedTask.assignedTo) {
+    console.log('Update result:', result);
+    
+    if (result.modifiedCount !== 1) {
+      console.error('Task update failed:', result);
       return res.status(500).json({
         success: false,
-        message: 'Failed to assign task - database update failed'
+        message: 'Failed to update task assignee'
       });
     }
     
@@ -886,16 +673,15 @@ const assignTask = async (req, res) => {
         metadata: {
           taskTitle: task.title,
           assignedTo: targetUserId,
-          assigneeName: assignedUser.name || assignedUser.username,
-          previousAssignee: task.assignedTo || null
+          assigneeName: assignedUser.name || assignedUser.username
         }
       });
     } catch (logError) {
       console.error('Activity logging error:', logError);
     }
     
-    // Return updated task with proper population
-    const populatedTask = await Task.findById(id)
+    // Get the freshly updated task
+    const updatedTask = await Task.findById(id)
       .populate('createdBy', 'name username avatar')
       .populate('assignedTo', 'name username avatar email')
       .populate('completedBy', 'name username avatar')
@@ -912,21 +698,18 @@ const assignTask = async (req, res) => {
         select: 'name'
       });
     
-    // Verify the assigned user is correctly set
-    if (!populatedTask.assignedTo) {
-      console.error('Populated task missing assignedTo field after assignment operation');
-      return res.status(500).json({
-        success: false,
-        message: 'Task assigned but verification failed'
-      });
-    }
+    console.log('Updated task retrieved:', 
+      updatedTask.assignedTo ? 
+      `Assigned to: ${updatedTask.assignedTo.name || updatedTask.assignedTo.username}` : 
+      'No assignee set'
+    );
     
     return res.status(200).json({
       success: true,
       message: `Task assigned successfully to ${assignedUser.name || assignedUser.username}`,
       data: {
-        ...populatedTask._doc,
-        isCompleted: populatedTask.status === 'done'
+        ...updatedTask._doc,
+        isCompleted: updatedTask.status === 'done'
       }
     });
   } catch (error) {
@@ -937,127 +720,4 @@ const assignTask = async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
-};
-
-// Unassign a task
-const unassignTask = async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    // Get the task with a clean query
-    const task = await Task.findById(id);
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: 'Task not found'
-      });
-    }
-    
-    // Check if the task is actually assigned to someone
-    if (!task.assignedTo) {
-      return res.status(400).json({
-        success: false,
-        message: 'Task is already unassigned'
-      });
-    }
-    
-    // Store who was previously assigned for the activity log
-    const previouslyAssigned = task.assignedTo;
-    
-    // Find the user who was previously assigned for logging purposes
-    let previousUser;
-    try {
-      previousUser = await User.findById(previouslyAssigned).select('name username');
-    } catch (userError) {
-      console.error('Error finding previous user:', userError);
-    }
-    
-    // Use findByIdAndUpdate to ensure atomic operation
-    const updatedTask = await Task.findByIdAndUpdate(
-      id,
-      { 
-        $set: { 
-          assignedTo: null,
-          updatedAt: Date.now()
-        } 
-      },
-      { new: true }
-    );
-    
-    if (updatedTask.assignedTo) {
-      console.error('Failed to unassign task:', updatedTask);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to unassign task, please try again'
-      });
-    }
-    
-    // Log activity
-    try {
-      await Activity.create({
-        user: req.user.id,
-        action: 'unassigned_task',
-        taskId: task._id,
-        boardId: task.board,
-        columnId: task.column,
-        description: `Unassigned ${previousUser ? previousUser.name || previousUser.username : 'a user'} from task "${task.title}"`,
-        metadata: {
-          taskTitle: task.title,
-          previouslyAssigned: previouslyAssigned.toString(),
-          previousUserName: previousUser ? previousUser.name || previousUser.username : undefined
-        }
-      });
-    } catch (logError) {
-      console.error('Activity logging error:', logError);
-    }
-    
-    // Return updated task with proper population
-    const fullUpdatedTask = await Task.findById(id)
-      .populate('createdBy', 'name username avatar')
-      .populate('completedBy', 'name username avatar')
-      .populate({
-        path: 'board',
-        select: 'title description'
-      })
-      .populate({
-        path: 'column',
-        select: 'name order'
-      })
-      .populate({
-        path: 'team',
-        select: 'name'
-      });
-    
-    return res.status(200).json({
-      success: true,
-      message: 'Task unassigned successfully',
-      data: {
-        ...fullUpdatedTask._doc,
-        isCompleted: fullUpdatedTask.status === 'done',
-        assignedTo: null  // Explicitly include null assignedTo in the response
-      }
-    });
-  } catch (error) {
-    console.error('Unassign task error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error while unassigning task',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-module.exports = {
-  createTask,
-  createTaskFromBody,
-  getAllTasks,
-  getTaskById,
-  getTasksByColumn,
-  updateTask,
-  moveTask,
-  completeTask,
-  reopenTask,
-  deleteTask,
-  assignTask,
-  unassignTask
 };
