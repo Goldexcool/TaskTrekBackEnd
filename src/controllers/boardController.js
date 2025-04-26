@@ -352,12 +352,42 @@ const deleteBoard = async (req, res) => {
 
 const getBoardsByTeam = async (req, res) => {
   try {
-    const teamId = req.params.teamId;
-    console.log('Getting boards for team ID:', teamId);
+    const { teamId } = req.params;
+    console.log(`Getting boards for team ID: ${teamId}`);
     
-    // Find boards for this team
+    // Check if valid team ID
+    if (!mongoose.Types.ObjectId.isValid(teamId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid team ID format'
+      });
+    }
+    
+    // Check if team exists
+    const team = await Team.findById(teamId);
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team not found'
+      });
+    }
+    
+    // Check if user is a member of the team
+    const isMember = team.members.some(member => 
+      member.user && member.user.toString() === req.user.id
+    );
+    
+    if (!isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not a member of this team'
+      });
+    }
+    
     const boards = await Board.find({ team: teamId })
-      .populate('createdBy', 'username email')
+      .populate('createdBy', 'name username avatar')
+      .populate('members.user', 'name username avatar email')
+      .populate('team', 'name')
       .sort({ updatedAt: -1 });
     
     console.log(`Found ${boards.length} boards for team`);

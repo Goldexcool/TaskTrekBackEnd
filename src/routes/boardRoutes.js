@@ -10,6 +10,9 @@ router.get('/', authMiddleware.authenticateToken, boardController.getBoards);
 // Create a new board
 router.post('/', authMiddleware.authenticateToken, boardController.createBoard);
 
+// Get boards by team ID
+router.get('/team/:teamId', authMiddleware.authenticateToken, boardController.getBoardsByTeam);
+
 // Special routes should come BEFORE the /:id route
 router.get('/complete', authMiddleware.authenticateToken, boardController.getAllBoardsComplete);
 
