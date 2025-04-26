@@ -10,6 +10,9 @@ router.get('/', authMiddleware.authenticateToken, boardController.getBoards);
 // Create a new board
 router.post('/', authMiddleware.authenticateToken, boardController.createBoard);
 
+// Special routes should come BEFORE the /:id route
+router.get('/complete', authMiddleware.authenticateToken, boardController.getAllBoardsComplete);
+
 // Get a single board by ID
 router.get('/:id', authMiddleware.authenticateToken, boardController.getBoardById);
 
