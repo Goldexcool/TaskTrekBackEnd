@@ -146,8 +146,7 @@ const createTaskFromBody = async (req, res) => {
       });
     }
 
-    // Set default assignee to creator if not specified
-    const taskAssignee = assignedTo || req.user.id;
+    const taskAssignee = assignedTo || null;
 
     let order = position;
     if (order === undefined) {
@@ -163,7 +162,7 @@ const createTaskFromBody = async (req, res) => {
       description: description || '',
       priority: priority || 'medium',
       dueDate,
-      assignedTo: taskAssignee,
+      assignedTo: taskAssignee,  // Will be null if not specified
       createdBy: req.user.id,
       board: boardId,
       column: columnId,
@@ -187,7 +186,7 @@ const createTaskFromBody = async (req, res) => {
         select: 'name'
       });
 
-    // Create activity directly instead of using the service
+    // Create activity
     try {
       await Activity.create({
         user: req.user.id,
@@ -806,7 +805,10 @@ const assignTask = async (req, res) => {
       });
     }
     
-    // Update the task
+    // Store the previous assignee for logging
+    const previousAssignee = task.assignedTo;
+    
+    // Update the task with the new assignee (completely replacing the old one)
     task.assignedTo = userId;
     task.updatedAt = Date.now();
     await task.save();
@@ -822,14 +824,15 @@ const assignTask = async (req, res) => {
         description: `Assigned task "${task.title}" to a user`,
         metadata: {
           taskTitle: task.title,
-          assignedTo: userId
+          assignedTo: userId,
+          previousAssignee: previousAssignee || null
         }
       });
     } catch (logError) {
       console.error('Activity logging error:', logError);
     }
     
-    // Return updated task
+    // Return updated task with proper population
     const updatedTask = await Task.findById(id)
       .populate('createdBy', 'name username avatar')
       .populate('assignedTo', 'name username avatar email')
@@ -847,6 +850,7 @@ const assignTask = async (req, res) => {
         select: 'name'
       });
     
+    // Make sure the response doesn't contain any references to the old assignee
     return res.status(200).json({
       success: true,
       message: 'Task assigned successfully',
