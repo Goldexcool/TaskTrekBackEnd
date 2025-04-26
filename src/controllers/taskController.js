@@ -146,7 +146,30 @@ const createTaskFromBody = async (req, res) => {
       });
     }
 
-    const taskAssignee = assignedTo || null;
+    let taskAssignee = null;
+    
+    if (assignedTo) {
+      if (assignedTo && !mongoose.Types.ObjectId.isValid(assignedTo)) {
+        const user = await User.findOne({
+          $or: [
+            { name: assignedTo },
+            { username: assignedTo }
+          ]
+        });
+        
+        if (user) {
+          taskAssignee = user._id;
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: `Could not find user "${assignedTo}"`
+          });
+        }
+      } else {
+        // If it's a valid ObjectId, use it directly
+        taskAssignee = assignedTo;
+      }
+    }
 
     let order = position;
     if (order === undefined) {
@@ -162,7 +185,7 @@ const createTaskFromBody = async (req, res) => {
       description: description || '',
       priority: priority || 'medium',
       dueDate,
-      assignedTo: taskAssignee,  // Will be null if not specified
+      assignedTo: taskAssignee,
       createdBy: req.user.id,
       board: boardId,
       column: columnId,
@@ -796,20 +819,38 @@ const assignTask = async (req, res) => {
       });
     }
     
-    // Check if user exists
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
+    // Handle user ID lookup if it's not a valid ObjectId (e.g., username provided)
+    let targetUserId = userId;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      const user = await User.findOne({
+        $or: [
+          { name: userId },
+          { username: userId }
+        ]
       });
+      
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: `User "${userId}" not found`
+        });
+      }
+      targetUserId = user._id;
+    } else {
+      // Check if user exists when a valid ObjectId is provided
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
     }
     
     // Store the previous assignee for logging
     const previousAssignee = task.assignedTo;
     
-    // Update the task with the new assignee (completely replacing the old one)
-    task.assignedTo = userId;
+    task.assignedTo = targetUserId;
     task.updatedAt = Date.now();
     await task.save();
     
@@ -824,7 +865,7 @@ const assignTask = async (req, res) => {
         description: `Assigned task "${task.title}" to a user`,
         metadata: {
           taskTitle: task.title,
-          assignedTo: userId,
+          assignedTo: targetUserId,
           previousAssignee: previousAssignee || null
         }
       });
@@ -850,7 +891,6 @@ const assignTask = async (req, res) => {
         select: 'name'
       });
     
-    // Make sure the response doesn't contain any references to the old assignee
     return res.status(200).json({
       success: true,
       message: 'Task assigned successfully',
@@ -885,6 +925,21 @@ const unassignTask = async (req, res) => {
     // Store who was previously assigned for the activity log
     const previouslyAssigned = task.assignedTo;
     
+    if (!previouslyAssigned) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task is already unassigned'
+      });
+    }
+    
+    // Find the user who was previously assigned for logging purposes
+    let previousUser;
+    try {
+      previousUser = await User.findById(previouslyAssigned).select('name username');
+    } catch (userError) {
+      console.error('Error finding previous user:', userError);
+    }
+    
     // Update the task
     task.assignedTo = null;
     task.updatedAt = Date.now();
@@ -898,10 +953,11 @@ const unassignTask = async (req, res) => {
         taskId: task._id,
         boardId: task.board,
         columnId: task.column,
-        description: `Unassigned user from task "${task.title}"`,
+        description: `Unassigned ${previousUser ? previousUser.name || previousUser.username : 'a user'} from task "${task.title}"`,
         metadata: {
           taskTitle: task.title,
-          previouslyAssigned
+          previouslyAssigned: previouslyAssigned.toString(),
+          previousUserName: previousUser ? previousUser.name : undefined
         }
       });
     } catch (logError) {
