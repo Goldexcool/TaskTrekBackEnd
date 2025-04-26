@@ -40,7 +40,10 @@ router.delete('/:boardId/columns/:columnId', authMiddleware.authenticateToken, b
 // Create a task in a column
 router.post('/:boardId/columns/:columnId/tasks', 
   authMiddleware.authenticateToken, 
-  taskController.createTask
+  taskController.createTaskFromBody
 );
+
+// Share a board
+router.post('/:id/share', authMiddleware.authenticateToken, boardController.shareBoard);
 
 module.exports = router;

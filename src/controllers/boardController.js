@@ -376,7 +376,6 @@ const getBoardsByTeam = async (req, res) => {
   }
 };
 
-
 const getAllBoardsComplete = async (req, res) => {
   try {
     console.log('Getting complete boards data for user ID:', req.user.id);
@@ -487,6 +486,522 @@ const getAllBoardsComplete = async (req, res) => {
   }
 };
 
+// Add a member to a board
+const addMember = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email, role } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+    
+    const board = await Board.findById(id);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    // Find the user by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    // Check if user is already a member
+    const isMember = board.members.some(member => 
+      member.user && member.user.toString() === user._id.toString()
+    );
+    
+    if (isMember) {
+      return res.status(400).json({
+        success: false,
+        message: 'User is already a member of this board'
+      });
+    }
+    
+    // Add member to the board
+    board.members.push({
+      user: user._id,
+      role: role || 'viewer'
+    });
+    
+    await board.save();
+    
+    // Get updated board with populated members
+    const updatedBoard = await Board.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('members.user', 'name username avatar email');
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Member added successfully',
+      data: updatedBoard
+    });
+  } catch (error) {
+    console.error('Add board member error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while adding board member',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Remove a member from a board
+const removeMember = async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+    
+    const board = await Board.findById(id);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    // Check permissions - only creator or admin can remove members
+    const requestingUserMember = board.members.find(m => 
+      m.user && m.user.toString() === req.user.id
+    );
+    
+    const isCreator = board.createdBy.toString() === req.user.id;
+    const isAdmin = requestingUserMember && requestingUserMember.role === 'admin';
+    
+    if (!isCreator && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to remove board members'
+      });
+    }
+    
+    // Check if user is actually a member
+    const memberIndex = board.members.findIndex(m => 
+      m.user && m.user.toString() === userId
+    );
+    
+    if (memberIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'User is not a member of this board'
+      });
+    }
+    
+    // Remove member
+    board.members.splice(memberIndex, 1);
+    
+    await board.save();
+    
+    // Get updated board with populated members
+    const updatedBoard = await Board.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('members.user', 'name username avatar email');
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Member removed successfully',
+      data: updatedBoard
+    });
+  } catch (error) {
+    console.error('Remove board member error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while removing board member',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Update member role in a board
+const updateMemberRole = async (req, res) => {
+  try {
+    const { id, userId } = req.params;
+    const { role } = req.body;
+    
+    if (!role || !['admin', 'member', 'viewer'].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid role is required (admin, member, or viewer)'
+      });
+    }
+    
+    const board = await Board.findById(id);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    // Check permissions - only creator or admin can update roles
+    const isCreator = board.createdBy.toString() === req.user.id;
+    const requestingUserMember = board.members.find(m => 
+      m.user && m.user.toString() === req.user.id
+    );
+    const isAdmin = requestingUserMember && requestingUserMember.role === 'admin';
+    
+    if (!isCreator && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update member roles'
+      });
+    }
+    
+    // Find the member to update
+    const memberIndex = board.members.findIndex(m => 
+      m.user && m.user.toString() === userId
+    );
+    
+    if (memberIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'User is not a member of this board'
+      });
+    }
+    
+    // Don't allow changing roles of the creator
+    if (board.createdBy.toString() === userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot change the role of the board creator'
+      });
+    }
+    
+    // Update the role
+    board.members[memberIndex].role = role;
+    
+    await board.save();
+    
+    // Get updated board with populated members
+    const updatedBoard = await Board.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('members.user', 'name username avatar email');
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Member role updated successfully',
+      data: updatedBoard
+    });
+  } catch (error) {
+    console.error('Update board member role error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while updating member role',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Create a column in a board
+const createColumn = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, order } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        message: 'Column name is required'
+      });
+    }
+    
+    const board = await Board.findById(id);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    // Check if user has permission to add columns
+    const isMember = board.members.some(member => 
+      member.user && member.user.toString() === req.user.id
+    );
+    
+    const isCreator = board.createdBy.toString() === req.user.id;
+    
+    if (!isCreator && !isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to add columns to this board'
+      });
+    }
+    
+    // Determine order if not provided
+    let columnOrder = order;
+    if (columnOrder === undefined) {
+      // Find highest order number and add 1
+      const lastColumn = await Column.findOne({ board: id })
+        .sort({ order: -1 })
+        .limit(1);
+      
+      columnOrder = lastColumn ? lastColumn.order + 1 : 0;
+    }
+    
+    // Create the column
+    const column = await Column.create({
+      name,
+      order: columnOrder,
+      board: id,
+      createdBy: req.user.id
+    });
+    
+    return res.status(201).json({
+      success: true,
+      message: 'Column created successfully',
+      data: column
+    });
+  } catch (error) {
+    console.error('Create column error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while creating column',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Update a column in a board
+const updateColumn = async (req, res) => {
+  try {
+    const { boardId, columnId } = req.params;
+    const { name, order } = req.body;
+    
+    // Check if board exists
+    const board = await Board.findById(boardId);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    // Check if user has permission to update columns
+    const isMember = board.members.some(member => 
+      member.user && member.user.toString() === req.user.id
+    );
+    const isCreator = board.createdBy.toString() === req.user.id;
+    
+    if (!isCreator && !isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update columns in this board'
+      });
+    }
+    
+    // Find and update the column
+    const column = await Column.findById(columnId);
+    if (!column) {
+      return res.status(404).json({
+        success: false,
+        message: 'Column not found'
+      });
+    }
+    
+    // Check if column belongs to this board
+    if (column.board.toString() !== boardId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Column does not belong to this board'
+      });
+    }
+    
+    // Update the column
+    if (name !== undefined) column.name = name;
+    if (order !== undefined) column.order = order;
+    column.updatedAt = Date.now();
+    
+    await column.save();
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Column updated successfully',
+      data: column
+    });
+  } catch (error) {
+    console.error('Update column error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while updating column',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Delete a column from a board
+const deleteColumn = async (req, res) => {
+  try {
+    const { boardId, columnId } = req.params;
+    
+    // Check if board exists
+    const board = await Board.findById(boardId);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    // Check if user has permission to delete columns
+    const isMember = board.members.some(member => 
+      member.user && member.user.toString() === req.user.id
+    );
+    const isCreator = board.createdBy.toString() === req.user.id;
+    
+    if (!isCreator && !isMember) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete columns from this board'
+      });
+    }
+    
+    // Find the column
+    const column = await Column.findById(columnId);
+    if (!column) {
+      return res.status(404).json({
+        success: false,
+        message: 'Column not found'
+      });
+    }
+    
+    // Check if column belongs to this board
+    if (column.board.toString() !== boardId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Column does not belong to this board'
+      });
+    }
+    
+    // Find tasks in this column
+    const tasks = await Task.find({ column: columnId });
+    
+    if (tasks.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete column with tasks. Move tasks to another column first.'
+      });
+    }
+    
+    // Delete the column
+    await Column.findByIdAndDelete(columnId);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Column deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete column error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while deleting column',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Share a board
+const shareBoard = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { emails, role } = req.body;
+    
+    if (!emails || !Array.isArray(emails)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid email array is required'
+      });
+    }
+    
+    const board = await Board.findById(id);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found'
+      });
+    }
+    
+    // Check permissions
+    const isCreator = board.createdBy.toString() === req.user.id;
+    const requestingUserMember = board.members.find(m => 
+      m.user && m.user.toString() === req.user.id
+    );
+    const isAdmin = requestingUserMember && requestingUserMember.role === 'admin';
+    
+    if (!isCreator && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to share this board'
+      });
+    }
+    
+    // Process each email
+    const results = {
+      success: [],
+      notFound: [],
+      alreadyMember: []
+    };
+    
+    for (const email of emails) {
+      const user = await User.findOne({ email });
+      
+      if (!user) {
+        results.notFound.push(email);
+        continue;
+      }
+      
+      // Check if already a member
+      const isMember = board.members.some(member => 
+        member.user && member.user.toString() === user._id.toString()
+      );
+      
+      if (isMember) {
+        results.alreadyMember.push(email);
+        continue;
+      }
+      
+      // Add as a member
+      board.members.push({
+        user: user._id,
+        role: role || 'viewer',
+        addedAt: new Date(),
+        addedBy: req.user.id
+      });
+      
+      results.success.push(email);
+    }
+    
+    await board.save();
+    
+    // Get updated board with populated members
+    const updatedBoard = await Board.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('members.user', 'name username avatar email');
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Board shared successfully',
+      results,
+      data: updatedBoard
+    });
+  } catch (error) {
+    console.error('Share board error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while sharing board',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = { 
   createBoard, 
   getBoards, 
@@ -494,5 +1009,12 @@ module.exports = {
   updateBoard,
   deleteBoard,
   getBoardsByTeam,
-  getAllBoardsComplete
+  getAllBoardsComplete,
+  addMember,
+  removeMember,
+  updateMemberRole,
+  createColumn,
+  updateColumn,
+  deleteColumn,
+  shareBoard
 };

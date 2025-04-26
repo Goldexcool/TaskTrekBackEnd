@@ -7,6 +7,8 @@ router.get('/all', authMiddleware.authenticateToken, taskController.getAllTasks)
 
 router.get('/column/:columnId', authMiddleware.authenticateToken, taskController.getTasksByColumn);
 
+router.get('/user/:userId', authMiddleware.authenticateToken, taskController.getTasksByUser);
+
 router.post('/', authMiddleware.authenticateToken, taskController.createTaskFromBody);
 
 router.get('/:id', authMiddleware.authenticateToken, taskController.getTaskById);
@@ -24,5 +26,6 @@ router.patch('/:id/assign', authMiddleware.authenticateToken, taskController.ass
 router.patch('/:id/unassign', authMiddleware.authenticateToken, taskController.unassignTask);
 
 router.delete('/:id', authMiddleware.authenticateToken, taskController.deleteTask);
+
 
 module.exports = router;

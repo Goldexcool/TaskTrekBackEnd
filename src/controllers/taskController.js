@@ -16,7 +16,7 @@ const checkBoardPermission = async (board, userId) => {
 };
 
 /**
- * Create a new task
+ * Create a task from board/column route
  */
 const createTask = async (req, res) => {
   try {
@@ -64,12 +64,37 @@ const createTask = async (req, res) => {
     
     const order = maxOrderTask ? maxOrderTask.order + 1 : 0;
 
+    // Handle assignedTo field
+    let taskAssignee = null;
+    
+    if (assignedTo) {
+      if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
+        const user = await User.findOne({
+          $or: [
+            { name: { $regex: new RegExp(assignedTo, 'i') } },
+            { username: { $regex: new RegExp(assignedTo, 'i') } }
+          ]
+        });
+        
+        if (user) {
+          taskAssignee = user._id;
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: `Could not find user "${assignedTo}"`
+          });
+        }
+      } else {
+        taskAssignee = assignedTo;
+      }
+    }
+
     const task = await Task.create({
       title,
-      description,
-      priority,
+      description: description || '',
+      priority: priority || 'medium',
       dueDate,
-      assignedTo,
+      assignedTo: taskAssignee,
       createdBy: req.user.id,
       board: boardId,
       column: columnId,
@@ -77,30 +102,49 @@ const createTask = async (req, res) => {
       team: board.team
     });
 
-    // Populate created task
     const populatedTask = await Task.findById(task._id)
       .populate('createdBy', 'name username avatar')
-      .populate('assignedTo', 'name username avatar email');
+      .populate('assignedTo', 'name username avatar email')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      });
 
     // Log activity
-    await Activity.create({
-      user: req.user.id,
-      action: 'created_task',
-      taskId: task._id,
-      boardId,
-      columnId,
-      teamId: board.team,
-      metadata: { 
-        taskTitle: title,
-        priority,
-        assignedTo: assignedTo || null
-      }
-    });
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: 'created_task',
+        taskId: task._id,
+        boardId,
+        columnId,
+        teamId: board.team,
+        description: `Created task "${task.title}"`,
+        metadata: { 
+          taskTitle: title,
+          priority,
+          assignedTo: taskAssignee
+        }
+      });
+    } catch (activityError) {
+      console.error('Activity logging error:', activityError);
+    }
 
     return res.status(201).json({
       success: true,
       message: 'Task created successfully',
-      data: populatedTask
+      data: {
+        ...populatedTask._doc,
+        isCompleted: false
+      }
     });
   } catch (error) {
     console.error('Create task error:', error);
@@ -720,4 +764,468 @@ const assignTask = async (req, res) => {
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
+};
+
+/**
+ * Unassign a task from a user
+ */
+const unassignTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Check if the task is already unassigned
+    if (!task.assignedTo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task is already unassigned'
+      });
+    }
+    
+    // Store who was previously assigned for the activity log
+    const previouslyAssigned = task.assignedTo;
+    
+    // Find the user who was previously assigned for logging purposes
+    let previousUser;
+    try {
+      previousUser = await User.findById(previouslyAssigned).select('name username');
+    } catch (userError) {
+      console.error('Error finding previous user:', userError);
+    }
+    
+    // Use updateOne for atomic operation
+    const result = await Task.updateOne(
+      { _id: id },
+      { 
+        $set: { 
+          assignedTo: null,
+          updatedAt: new Date()
+        } 
+      }
+    );
+    
+    if (result.modifiedCount !== 1) {
+      console.error('Task unassignment failed:', result);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to unassign task, please try again'
+      });
+    }
+    
+    // Log activity
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: 'unassigned_task',
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column,
+        description: `Unassigned ${previousUser ? previousUser.name || previousUser.username : 'a user'} from task "${task.title}"`,
+        metadata: {
+          taskTitle: task.title,
+          previouslyAssigned: previouslyAssigned.toString(),
+          previousUserName: previousUser ? previousUser.name || previousUser.username : undefined
+        }
+      });
+    } catch (logError) {
+      console.error('Activity logging error:', logError);
+    }
+    
+    // Get updated task with populated fields
+    const updatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task unassigned successfully',
+      data: {
+        ...updatedTask._doc,
+        isCompleted: updatedTask.status === 'done',
+        assignedTo: null  // Explicitly include null assignedTo in response
+      }
+    });
+  } catch (error) {
+    console.error('Unassign task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while unassigning task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Complete a task
+ */
+const completeTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Check if task is already completed
+    if (task.status === 'done') {
+      return res.status(400).json({
+        success: false,
+        message: 'Task is already completed'
+      });
+    }
+    
+    // Update task status to done
+    task.status = 'done';
+    task.completedBy = req.user.id;
+    task.completedAt = new Date();
+    task.updatedAt = new Date();
+    
+    await task.save();
+    
+    // Log activity
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: 'completed_task',
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column,
+        description: `Completed task "${task.title}"`,
+        metadata: {
+          taskTitle: task.title,
+          completedBy: req.user.id
+        }
+      });
+    } catch (logError) {
+      console.error('Activity logging error:', logError);
+    }
+    
+    // Get updated task with populated fields
+    const updatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task completed successfully',
+      data: {
+        ...updatedTask._doc,
+        isCompleted: true
+      }
+    });
+  } catch (error) {
+    console.error('Complete task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while completing task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Reopen a completed task
+ */
+const reopenTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Check if task is already open
+    if (task.status !== 'done') {
+      return res.status(400).json({
+        success: false,
+        message: 'Task is already open'
+      });
+    }
+    
+    // Update task status to todo
+    task.status = 'todo';
+    task.completedBy = null;
+    task.completedAt = null;
+    task.updatedAt = new Date();
+    
+    await task.save();
+    
+    // Log activity
+    try {
+      await Activity.create({
+        user: req.user.id,
+        action: 'reopened_task',
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column,
+        description: `Reopened task "${task.title}"`,
+        metadata: {
+          taskTitle: task.title,
+          reopenedBy: req.user.id
+        }
+      });
+    } catch (logError) {
+      console.error('Activity logging error:', logError);
+    }
+    
+    // Get updated task with populated fields
+    const updatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      });
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task reopened successfully',
+      data: {
+        ...updatedTask._doc,
+        isCompleted: false
+      }
+    });
+  } catch (error) {
+    console.error('Reopen task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while reopening task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Get tasks by user ID
+ */
+const getTasksByUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Check if valid user ID
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID'
+      });
+    }
+    
+    const tasks = await Task.find({ assignedTo: userId })
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      })
+      .sort({ updatedAt: -1 });
+    
+    return res.status(200).json({
+      success: true,
+      count: tasks.length,
+      data: tasks.map(task => ({
+        ...task._doc,
+        isCompleted: task.status === 'done'
+      }))
+    });
+  } catch (error) {
+    console.error('Get tasks by user error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching tasks',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Get tasks by column ID
+ */
+const getTasksByColumn = async (req, res) => {
+  try {
+    const { columnId } = req.params;
+    
+    // Check if valid column ID
+    if (!mongoose.Types.ObjectId.isValid(columnId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid column ID'
+      });
+    }
+    
+    const tasks = await Task.find({ column: columnId })
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      })
+      .sort({ order: 1 }); // Sort by task order within column
+    
+    return res.status(200).json({
+      success: true,
+      count: tasks.length,
+      data: tasks.map(task => ({
+        ...task._doc,
+        isCompleted: task.status === 'done'
+      }))
+    });
+  } catch (error) {
+    console.error('Get tasks by column error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while fetching tasks',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Delete a task
+ */
+const deleteTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    // Get board to check permissions
+    const board = await Board.findById(task.board);
+    if (!board) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated board not found'
+      });
+    }
+    
+    // Check if user is the creator of the task or has board permissions
+    const isCreator = task.createdBy.toString() === req.user.id;
+    const hasBoardPermission = await checkBoardPermission(board, req.user.id);
+    
+    if (!isCreator && !hasBoardPermission) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to delete this task'
+      });
+    }
+    
+    // Log activity before deletion
+    await Activity.create({
+      user: req.user.id,
+      action: 'deleted_task',
+      boardId: task.board,
+      columnId: task.column,
+      teamId: task.team,
+      description: `Deleted task "${task.title}"`,
+      metadata: {
+        taskTitle: task.title,
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column
+      }
+    });
+    
+    // Delete the task
+    await Task.findByIdAndDelete(id);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while deleting task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+module.exports = {
+  createTask,
+  createTaskFromBody,
+  getAllTasks,
+  getTaskById,
+  moveTask,
+  updateTask,
+  assignTask,
+  unassignTask,
+  completeTask,
+  reopenTask,
+  getTasksByUser,
+  getTasksByColumn,
+  deleteTask
 };
