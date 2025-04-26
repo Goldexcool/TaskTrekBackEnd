@@ -35,15 +35,15 @@ const createBoard = async (req, res) => {
 
     // Create default columns with proper validation
     const defaultColumns = [
-      { name: 'To Do', board: board._id, order: 0 },
-      { name: 'In Progress', board: board._id, order: 1 },
-      { name: 'Done', board: board._id, order: 2 }
+      { title: 'To Do', board: board._id, order: 0 },
+      { title: 'In Progress', board: board._id, order: 1 },
+      { title: 'Done', board: board._id, order: 2 }
     ];
 
-    // Make sure all columns have names/titles
+    // Make sure all columns have titles
     for (const column of defaultColumns) {
-      if (!column.name) {
-        throw new Error('Default column must have a name');
+      if (!column.title) {
+        throw new Error('Default column must have a title');
       }
     }
 
