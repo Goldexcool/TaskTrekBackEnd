@@ -14,8 +14,9 @@ const { logBoardActivity } = require('../services/activityService');
  */
 const createBoard = async (req, res) => {
   try {
-    const { title, description, teamId, visibility = 'team' } = req.body;
+    const { title, description, teamId } = req.body;
 
+    // Validate required fields
     if (!title) {
       return res.status(400).json({
         success: false,
@@ -23,113 +24,57 @@ const createBoard = async (req, res) => {
       });
     }
 
-    // Create board
+    // Create the board
     const board = await Board.create({
       title,
-      description,
+      description: description || '',
       team: teamId || null,
-      visibility,
       createdBy: req.user.id,
-      members: [{
-        user: req.user.id,
-        role: 'admin',
-        addedAt: new Date(),
-        addedBy: req.user.id
-      }]
+      members: [{ user: req.user.id, role: 'admin' }]
     });
+
+    // Create default columns with proper validation
+    const defaultColumns = [
+      { name: 'To Do', board: board._id, order: 0 },
+      { name: 'In Progress', board: board._id, order: 1 },
+      { name: 'Done', board: board._id, order: 2 }
+    ];
+
+    // Make sure all columns have names/titles
+    for (const column of defaultColumns) {
+      if (!column.name) {
+        throw new Error('Default column must have a name');
+      }
+    }
+
+    await Column.insertMany(defaultColumns);
+
+    // Fetch the populated board
+    const populatedBoard = await Board.findById(board._id)
+      .populate('createdBy', 'name username avatar')
+      .populate('members.user', 'name username avatar email')
+      .populate('team', 'name');
+
+    // Get columns for the board
+    const columns = await Column.find({ board: board._id }).sort('order');
 
     // Log activity
     await Activity.create({
       user: req.user.id,
       action: 'created_board',
       boardId: board._id,
-      teamId: teamId,
-      metadata: {
-        boardTitle: title,
-        visibility
-      }
+      teamId: teamId || null,
+      description: `Created board "${title}"`,
+      metadata: { boardTitle: title }
     });
-
-    // Create default columns
-    const defaultColumns = [
-      { name: 'To Do', order: 0 },
-      { name: 'In Progress', order: 1 },
-      { name: 'Done', order: 2 }
-    ];
-
-    for (const column of defaultColumns) {
-      await Column.create({
-        name: column.name,
-        order: column.order,
-        board: board._id,
-        createdBy: req.user.id
-      });
-    }
-
-    // Populate columns after creation
-    const populatedBoard = await Board.findById(board._id)
-      .populate('createdBy', 'name username avatar')
-      .populate({
-        path: 'members.user',
-        select: 'name username avatar email'
-      });
-
-    // If board is created in a team, notify team members via WebSocket
-    if (teamId) {
-      const team = await Team.findById(teamId).select('members admins owner');
-      
-      if (team) {
-        const teamMembers = [
-          ...(team.members || []), 
-          ...(team.admins || [])
-        ];
-        
-        if (team.owner) {
-          teamMembers.push(team.owner);
-        }
-        
-        const uniqueMembers = [...new Set(teamMembers
-          .filter(memberId => memberId && memberId.toString() !== req.user.id)
-          .map(memberId => memberId.toString()))];
-        
-        // Send WebSocket notifications to team members
-        const io = req.app.get('io');
-        if (io) {
-          uniqueMembers.forEach(memberId => {
-            io.to(`user:${memberId}`).emit('board:created', {
-              boardId: board._id,
-              title: board.title,
-              creator: {
-                id: req.user.id,
-                name: req.user.name || req.user.username
-              },
-              teamId
-            });
-          });
-        }
-        
-        // Create notifications for team members
-        const creator = await User.findById(req.user.id).select('name username');
-        const notifications = uniqueMembers.map(memberId => ({
-          recipient: memberId,
-          type: 'board_created',
-          message: `${creator.name || creator.username} created a new board "${title}" in your team`,
-          relatedBoard: board._id,
-          relatedTeam: teamId,
-          initiator: req.user.id,
-          read: false
-        }));
-        
-        if (notifications.length > 0) {
-          await Notification.insertMany(notifications);
-        }
-      }
-    }
 
     return res.status(201).json({
       success: true,
       message: 'Board created successfully',
-      data: populatedBoard
+      data: {
+        ...populatedBoard._doc,
+        columns
+      }
     });
   } catch (error) {
     console.error('Create board error:', error);
