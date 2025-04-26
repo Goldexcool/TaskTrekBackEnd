@@ -12,7 +12,7 @@ const TaskSchema = new mongoose.Schema({
   },
   priority: {
     type: String,
-    enum: ['low', 'medium', 'high'],
+    enum: ['low', 'medium', 'high', 'critical'],  
     default: 'medium'
   },
   status: {
@@ -50,6 +50,14 @@ const TaskSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  completedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  completedAt: {
+    type: Date
   },
   createdAt: {
     type: Date,
