@@ -6,6 +6,8 @@ const User = require('../models/User');
 const Activity = require('../models/Activity');
 const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
+const axios = require('axios');
+const { getAuthToken } = require('../utils/auth');
 
 /**
  * Check if a user has permission to access a board
@@ -687,307 +689,68 @@ const updateTask = async (req, res) => {
 };
 
 /**
- * Assign a task to a user - improved version
+ * Assign a task to a user
+ * @param {string} taskId - The ID of the task
+ * @param {string|object} userIdentifier - User ID, email, username or user object
+ * @returns {Promise} - Promise resolving to updated task
  */
-const assignTask = async (req, res) => {
+const assignTask = async (taskId, userIdentifier) => {
   try {
-    const { id } = req.params;
-    const { userId, email, username } = req.body;
+    // Prepare payload based on what type of identifier we have
+    let payload = {};
     
-    console.log('Assignment request:', { taskId: id, userId, email, username });
-    
-    // Allow flexible identification of the user to assign
-    if (!userId && !email && !username) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide userId, email, or username to assign the task'
-      });
+    if (typeof userIdentifier === 'object') {
+      // If it's a user object, extract the identifier
+      if (userIdentifier._id) payload.userId = userIdentifier._id;
+      else if (userIdentifier.email) payload.email = userIdentifier.email;
+      else if (userIdentifier.username) payload.username = userIdentifier.username;
+    } else {
+      // If it's a string, assume it's a userId
+      payload.userId = userIdentifier;
     }
     
-    // First, find the task
-    const task = await Task.findById(id);
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: 'Task not found'
-      });
-    }
-    
-    let assignedUser = null;
-    
-    // Attempt to find the user through multiple methods
-    if (userId) {
-      if (mongoose.Types.ObjectId.isValid(userId)) {
-        assignedUser = await User.findById(userId);
-      } else {
-        // If not a valid ObjectId, treat as a search term
-        assignedUser = await User.findOne({
-          $or: [
-            { name: { $regex: new RegExp(userId, 'i') } },
-            { username: { $regex: new RegExp(userId, 'i') } },
-            { email: { $regex: new RegExp(userId, 'i') } }
-          ]
-        });
+    const response = await axios.patch(
+      `/api/tasks/${taskId}/assign`,
+      payload,
+      {
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       }
-    } else if (email) {
-      assignedUser = await User.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
-    } else if (username) {
-      assignedUser = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
-    }
-    
-    if (!assignedUser) {
-      const searchTerm = userId || email || username;
-      return res.status(404).json({
-        success: false,
-        message: `Could not find user "${searchTerm}"`
-      });
-    }
-    
-    console.log('Found user to assign:', { 
-      userId: assignedUser._id, 
-      name: assignedUser.name || assignedUser.username,
-      email: assignedUser.email 
-    });
-    
-    // Check if already assigned to this user
-    if (task.assignedTo && task.assignedTo.toString() === assignedUser._id.toString()) {
-      return res.status(200).json({
-        success: true,
-        message: `Task is already assigned to ${assignedUser.name || assignedUser.username}`,
-        data: {
-          ...task._doc,
-          isCompleted: task.status === 'done'
-        }
-      });
-    }
-    
-    // Store previous assignment for activity logging
-    const wasAssignedTo = task.assignedTo;
-    let previousUser = null;
-    
-    if (wasAssignedTo) {
-      try {
-        previousUser = await User.findById(wasAssignedTo).select('name username');
-      } catch (err) {
-        console.error('Error finding previous assignee:', err);
-      }
-    }
-    
-    // Use direct update with findByIdAndUpdate for atomicity
-    const updatedTask = await Task.findByIdAndUpdate(
-      id,
-      { 
-        $set: { 
-          assignedTo: assignedUser._id,
-          updatedAt: new Date()
-        } 
-      },
-      { new: true } // Return the updated document
     );
     
-    if (!updatedTask) {
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to update task assignment'
-      });
-    }
-    
-    console.log('Task updated:', { 
-      id: updatedTask._id,
-      assignedTo: updatedTask.assignedTo
-    });
-    
-    // Fetch the fully populated task 
-    const populatedTask = await Task.findById(id)
-      .populate('createdBy', 'name username avatar')
-      .populate('assignedTo', 'name username avatar email')
-      .populate('completedBy', 'name username avatar')
-      .populate({
-        path: 'board',
-        select: 'title description'
-      })
-      .populate({
-        path: 'column',
-        select: 'name order'
-      })
-      .populate({
-        path: 'team',
-        select: 'name'
-      });
-      
-    // Log activity
-    try {
-      let actionDescription;
-      
-      if (wasAssignedTo) {
-        actionDescription = `Reassigned task "${task.title}" from ${previousUser ? previousUser.name || previousUser.username : 'someone'} to ${assignedUser.name || assignedUser.username}`;
-      } else {
-        actionDescription = `Assigned task "${task.title}" to ${assignedUser.name || assignedUser.username}`;
-      }
-      
-      await Activity.create({
-        user: req.user.id,
-        action: 'assigned_task',
-        taskId: task._id,
-        boardId: task.board,
-        columnId: task.column,
-        teamId: task.team,
-        description: actionDescription,
-        metadata: {
-          taskTitle: task.title,
-          assignedTo: assignedUser._id,
-          assigneeName: assignedUser.name || assignedUser.username,
-          previouslyAssigned: wasAssignedTo ? wasAssignedTo.toString() : null,
-          previousUserName: previousUser ? previousUser.name || previousUser.username : null
-        }
-      });
-      
-      // Create notification for the assigned user
-      await Notification.create({
-        recipient: assignedUser._id,
-        sender: req.user.id,
-        type: 'task_assigned',
-        relatedTask: task._id,
-        relatedBoard: task.board,
-        message: `You've been assigned to task "${task.title}"`,
-        read: false
-      });
-      
-    } catch (logError) {
-      console.error('Activity or notification logging error:', logError);
-    }
-    
-    // Construct a clear and helpful success message
-    let message;
-    if (wasAssignedTo) {
-      message = `Task reassigned from ${previousUser ? previousUser.name || previousUser.username : 'previous user'} to ${assignedUser.name || assignedUser.username}`;
+    if (response.data.success) {
+      return response.data.data;
     } else {
-      message = `Task assigned to ${assignedUser.name || assignedUser.username}`;
+      throw new Error(response.data.message || 'Failed to assign task');
     }
-    
-    return res.status(200).json({
-      success: true,
-      message: message,
-      data: {
-        ...populatedTask._doc,
-        isCompleted: populatedTask.status === 'done'
-      }
-    });
   } catch (error) {
-    console.error('Assign task error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error while assigning task',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('Error assigning task:', error);
+    throw error;
   }
 };
 
 /**
- * Unassign a task from a user
+ * Unassign a task
+ * @param {string} taskId - The ID of the task
+ * @returns {Promise} - Promise resolving to updated task
  */
-const unassignTask = async (req, res) => {
+const unassignTask = async (taskId) => {
   try {
-    const { id } = req.params;
-    
-    const task = await Task.findById(id);
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        message: 'Task not found'
-      });
-    }
-    
-    // Check if the task is already unassigned
-    if (!task.assignedTo) {
-      return res.status(400).json({
-        success: false,
-        message: 'Task is already unassigned'
-      });
-    }
-    
-    // Store who was previously assigned for the activity log
-    const previouslyAssigned = task.assignedTo;
-    
-    // Find the user who was previously assigned for logging purposes
-    let previousUser;
-    try {
-      previousUser = await User.findById(previouslyAssigned).select('name username');
-    } catch (userError) {
-      console.error('Error finding previous user:', userError);
-    }
-    
-    // Use updateOne for atomic operation
-    const result = await Task.updateOne(
-      { _id: id },
-      { 
-        $set: { 
-          assignedTo: null,
-          updatedAt: new Date()
-        } 
+    const response = await axios.patch(
+      `/api/tasks/${taskId}/unassign`,
+      {},
+      {
+        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
       }
     );
     
-    if (result.modifiedCount !== 1) {
-      console.error('Task unassignment failed:', result);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to unassign task, please try again'
-      });
+    if (response.data.success) {
+      return response.data.data;
+    } else {
+      throw new Error(response.data.message || 'Failed to unassign task');
     }
-    
-    // Log activity
-    try {
-      await Activity.create({
-        user: req.user.id,
-        action: 'unassigned_task',
-        taskId: task._id,
-        boardId: task.board,
-        columnId: task.column,
-        description: `Unassigned ${previousUser ? previousUser.name || previousUser.username : 'a user'} from task "${task.title}"`,
-        metadata: {
-          taskTitle: task.title,
-          previouslyAssigned: previouslyAssigned.toString(),
-          previousUserName: previousUser ? previousUser.name || previousUser.username : undefined
-        }
-      });
-    } catch (logError) {
-      console.error('Activity logging error:', logError);
-    }
-    
-    // Get updated task with populated fields
-    const updatedTask = await Task.findById(id)
-      .populate('createdBy', 'name username avatar')
-      .populate('completedBy', 'name username avatar')
-      .populate({
-        path: 'board',
-        select: 'title description'
-      })
-      .populate({
-        path: 'column',
-        select: 'name order'
-      })
-      .populate({
-        path: 'team',
-        select: 'name'
-      });
-    
-    return res.status(200).json({
-      success: true,
-      message: 'Task unassigned successfully',
-      data: {
-        ...updatedTask._doc,
-        isCompleted: updatedTask.status === 'done',
-        assignedTo: null  // Explicitly include null assignedTo in response
-      }
-    });
   } catch (error) {
-    console.error('Unassign task error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error while unassigning task',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('Error unassigning task:', error);
+    throw error;
   }
 };
 
