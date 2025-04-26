@@ -66,13 +66,15 @@ const createTask = async (req, res) => {
 
     // Handle assignedTo field
     let taskAssignee = null;
-    
+
     if (assignedTo) {
       if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
+        // Enhanced search to include email as well
         const user = await User.findOne({
           $or: [
             { name: { $regex: new RegExp(assignedTo, 'i') } },
-            { username: { $regex: new RegExp(assignedTo, 'i') } }
+            { username: { $regex: new RegExp(assignedTo, 'i') } },
+            { email: { $regex: new RegExp(assignedTo, 'i') } }
           ]
         });
         
@@ -191,13 +193,15 @@ const createTaskFromBody = async (req, res) => {
     }
 
     let taskAssignee = null;
-    
+
     if (assignedTo) {
-      if (assignedTo && !mongoose.Types.ObjectId.isValid(assignedTo)) {
+      if (!mongoose.Types.ObjectId.isValid(assignedTo)) {
+        // Enhanced search to include email as well
         const user = await User.findOne({
           $or: [
-            { name: assignedTo },
-            { username: assignedTo }
+            { name: { $regex: new RegExp(assignedTo, 'i') } },
+            { username: { $regex: new RegExp(assignedTo, 'i') } },
+            { email: { $regex: new RegExp(assignedTo, 'i') } }
           ]
         });
         
@@ -210,7 +214,6 @@ const createTaskFromBody = async (req, res) => {
           });
         }
       } else {
-        // If it's a valid ObjectId, use it directly
         taskAssignee = assignedTo;
       }
     }
@@ -524,7 +527,21 @@ const updateTask = async (req, res) => {
     if (description !== undefined) task.description = description;
     if (priority !== undefined) task.priority = priority;
     if (dueDate !== undefined) task.dueDate = dueDate;
-    if (status !== undefined) task.status = status;
+    if (status !== undefined) {
+      // Map common status values to valid enum values
+      const statusMap = {
+        'completed': 'done',
+        'complete': 'done',
+        'finished': 'done',
+        'pending': 'todo',
+        'in-progress': 'todo',
+        'inprogress': 'todo',
+        'in progress': 'todo'
+      };
+
+      // Use the mapped value if available, otherwise use original (which will fail validation if invalid)
+      task.status = statusMap[status.toLowerCase()] || status;
+    }
     
     // Handle assignment/unassignment
     let assignActivity = null;
