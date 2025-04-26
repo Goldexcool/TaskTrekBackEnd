@@ -821,11 +821,14 @@ const assignTask = async (req, res) => {
     
     // Handle user ID lookup if it's not a valid ObjectId (e.g., username provided)
     let targetUserId = userId;
+    let assignedUser = null;
+    
     if (!mongoose.Types.ObjectId.isValid(userId)) {
+      // Try a more flexible search with case insensitivity for name or username
       const user = await User.findOne({
         $or: [
-          { name: userId },
-          { username: userId }
+          { name: { $regex: new RegExp('^' + userId + '$', 'i') } },
+          { username: { $regex: new RegExp('^' + userId + '$', 'i') } }
         ]
       });
       
@@ -836,6 +839,7 @@ const assignTask = async (req, res) => {
         });
       }
       targetUserId = user._id;
+      assignedUser = user;
     } else {
       // Check if user exists when a valid ObjectId is provided
       const user = await User.findById(userId);
@@ -845,7 +849,10 @@ const assignTask = async (req, res) => {
           message: 'User not found'
         });
       }
+      assignedUser = user;
     }
+    
+    console.log(`Assigning task to user: ${assignedUser.name} (${targetUserId})`);
     
     // Check if the task is already assigned to this user
     if (task.assignedTo && task.assignedTo.toString() === targetUserId.toString()) {
@@ -863,6 +870,19 @@ const assignTask = async (req, res) => {
     task.updatedAt = Date.now();
     await task.save();
     
+    // Double-check the assignment was successful
+    const checkTask = await Task.findById(id);
+    if (!checkTask.assignedTo || checkTask.assignedTo.toString() !== targetUserId.toString()) {
+      console.error('Assignment verification failed:', { 
+        expected: targetUserId.toString(),
+        actual: checkTask.assignedTo ? checkTask.assignedTo.toString() : 'null'
+      });
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to assign task - database update verification failed'
+      });
+    }
+    
     // Log activity
     try {
       await Activity.create({
@@ -871,10 +891,11 @@ const assignTask = async (req, res) => {
         taskId: task._id,
         boardId: task.board,
         columnId: task.column,
-        description: `Assigned task "${task.title}" to a user`,
+        description: `Assigned task "${task.title}" to ${assignedUser.name || assignedUser.username}`,
         metadata: {
           taskTitle: task.title,
           assignedTo: targetUserId,
+          assigneeName: assignedUser.name || assignedUser.username,
           previousAssignee: previousAssignee || null
         }
       });
@@ -902,7 +923,7 @@ const assignTask = async (req, res) => {
     
     return res.status(200).json({
       success: true,
-      message: 'Task assigned successfully',
+      message: `Task assigned successfully to ${assignedUser.name || assignedUser.username}`,
       data: {
         ...updatedTask._doc,
         isCompleted: updatedTask.status === 'done'
@@ -923,6 +944,7 @@ const unassignTask = async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Get the task with a clean query
     const task = await Task.findById(id);
     if (!task) {
       return res.status(404).json({
@@ -950,14 +972,20 @@ const unassignTask = async (req, res) => {
       console.error('Error finding previous user:', userError);
     }
     
-    // Update the task - explicitly set to null to ensure it's unassigned
-    task.assignedTo = null;
-    task.updatedAt = Date.now();
-    await task.save();
+    // Use findByIdAndUpdate to ensure atomic operation
+    const updatedTask = await Task.findByIdAndUpdate(
+      id,
+      { 
+        $set: { 
+          assignedTo: null,
+          updatedAt: Date.now()
+        } 
+      },
+      { new: true }
+    );
     
-    // Immediately verify the update was successful
-    const verifiedTask = await Task.findById(id);
-    if (verifiedTask.assignedTo) {
+    if (updatedTask.assignedTo) {
+      console.error('Failed to unassign task:', updatedTask);
       return res.status(500).json({
         success: false,
         message: 'Failed to unassign task, please try again'
@@ -983,8 +1011,8 @@ const unassignTask = async (req, res) => {
       console.error('Activity logging error:', logError);
     }
     
-    // Return updated task
-    const updatedTask = await Task.findById(id)
+    // Return updated task with proper population
+    const fullUpdatedTask = await Task.findById(id)
       .populate('createdBy', 'name username avatar')
       .populate('completedBy', 'name username avatar')
       .populate({
@@ -1004,8 +1032,8 @@ const unassignTask = async (req, res) => {
       success: true,
       message: 'Task unassigned successfully',
       data: {
-        ...updatedTask._doc,
-        isCompleted: updatedTask.status === 'done',
+        ...fullUpdatedTask._doc,
+        isCompleted: fullUpdatedTask.status === 'done',
         assignedTo: null  // Explicitly include null assignedTo in the response
       }
     });
