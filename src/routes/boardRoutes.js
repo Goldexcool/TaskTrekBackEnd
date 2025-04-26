@@ -10,13 +10,11 @@ router.get('/', authMiddleware.authenticateToken, boardController.getBoards);
 // Create a new board
 router.post('/', authMiddleware.authenticateToken, boardController.createBoard);
 
-// Get boards by team ID
-router.get('/team/:teamId', authMiddleware.authenticateToken, boardController.getBoardsByTeam);
-
 // Special routes should come BEFORE the /:id route
 router.get('/complete', authMiddleware.authenticateToken, boardController.getAllBoardsComplete);
+router.get('/team/:teamId', authMiddleware.authenticateToken, boardController.getBoardsByTeam);
 
-// Get a single board by ID
+// Then the parameterized routes
 router.get('/:id', authMiddleware.authenticateToken, boardController.getBoardById);
 
 // Update a board (PATCH for partial updates)

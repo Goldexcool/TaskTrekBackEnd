@@ -174,6 +174,8 @@ const getBoardById = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
 
+    console.log(`Getting board with ID: ${id} for user ${userId}`);
+
     const board = await Board.findById(id)
       .populate('createdBy', 'name username avatar')
       .populate('members.user', 'name username avatar email')
@@ -196,9 +198,12 @@ const getBoardById = async (req, res) => {
     if (board.team) {
       const team = await Team.findById(board.team);
       isTeamMember = team && (
-        team.owner.toString() === userId || 
-        team.admins.some(id => id.toString() === userId) ||
-        team.members.some(m => (m.user || m).toString() === userId)
+        team.owner?.toString() === userId || 
+        team.admins?.some(id => id.toString() === userId) ||
+        team.members?.some(m => {
+          const memberId = m.user ? m.user.toString() : m.toString();
+          return memberId === userId;
+        })
       );
     }
 
@@ -209,14 +214,21 @@ const getBoardById = async (req, res) => {
       });
     }
 
-    // Add columns for this board
-    const columns = await Column.find({ board: id }).sort('order');
+    // Add columns for this board with better error handling
+    let columns = [];
+    try {
+      columns = await Column.find({ board: id }).sort('order');
+      console.log(`Found ${columns.length} columns for board ${id}`);
+    } catch (columnError) {
+      console.error('Error fetching columns:', columnError);
+      // Continue execution even if columns fetch fails
+    }
 
     return res.status(200).json({
       success: true,
       data: {
         ...board._doc,
-        columns
+        columns: columns || []
       }
     });
   } catch (error) {
@@ -372,12 +384,16 @@ const getBoardsByTeam = async (req, res) => {
       });
     }
     
-    // Check if user is a member of the team
-    const isMember = team.members.some(member => 
-      member.user && member.user.toString() === req.user.id
-    );
+    // More comprehensive check for team membership
+    const isTeamMember = team.owner?.toString() === req.user.id || 
+                         (team.admins && team.admins.some(id => id.toString() === req.user.id)) ||
+                         (team.members && team.members.some(m => {
+                            // Handle both cases: if member is just an ID or an object with user property
+                            const memberId = m.user ? m.user.toString() : m.toString();
+                            return memberId === req.user.id;
+                         }));
     
-    if (!isMember) {
+    if (!isTeamMember) {
       return res.status(403).json({
         success: false,
         message: 'You are not a member of this team'
