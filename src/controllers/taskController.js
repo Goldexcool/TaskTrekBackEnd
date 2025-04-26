@@ -854,32 +854,23 @@ const assignTask = async (req, res) => {
     
     console.log(`Assigning task to user: ${assignedUser.name} (${targetUserId})`);
     
-    // Check if the task is already assigned to this user
-    if (task.assignedTo && task.assignedTo.toString() === targetUserId.toString()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Task is already assigned to this user'
-      });
-    }
+    // Use findByIdAndUpdate instead of save() to ensure atomic operation
+    const updatedTask = await Task.findByIdAndUpdate(
+      id,
+      { 
+        assignedTo: targetUserId,
+        updatedAt: Date.now()
+      },
+      { 
+        new: true,
+        runValidators: true 
+      }
+    );
     
-    // Store the previous assignee for logging
-    const previousAssignee = task.assignedTo;
-    
-    // Always update the assignedTo field with the new user ID
-    task.assignedTo = targetUserId;
-    task.updatedAt = Date.now();
-    await task.save();
-    
-    // Double-check the assignment was successful
-    const checkTask = await Task.findById(id);
-    if (!checkTask.assignedTo || checkTask.assignedTo.toString() !== targetUserId.toString()) {
-      console.error('Assignment verification failed:', { 
-        expected: targetUserId.toString(),
-        actual: checkTask.assignedTo ? checkTask.assignedTo.toString() : 'null'
-      });
+    if (!updatedTask || !updatedTask.assignedTo) {
       return res.status(500).json({
         success: false,
-        message: 'Failed to assign task - database update verification failed'
+        message: 'Failed to assign task - database update failed'
       });
     }
     
@@ -896,7 +887,7 @@ const assignTask = async (req, res) => {
           taskTitle: task.title,
           assignedTo: targetUserId,
           assigneeName: assignedUser.name || assignedUser.username,
-          previousAssignee: previousAssignee || null
+          previousAssignee: task.assignedTo || null
         }
       });
     } catch (logError) {
@@ -904,7 +895,7 @@ const assignTask = async (req, res) => {
     }
     
     // Return updated task with proper population
-    const updatedTask = await Task.findById(id)
+    const populatedTask = await Task.findById(id)
       .populate('createdBy', 'name username avatar')
       .populate('assignedTo', 'name username avatar email')
       .populate('completedBy', 'name username avatar')
@@ -921,12 +912,21 @@ const assignTask = async (req, res) => {
         select: 'name'
       });
     
+    // Verify the assigned user is correctly set
+    if (!populatedTask.assignedTo) {
+      console.error('Populated task missing assignedTo field after assignment operation');
+      return res.status(500).json({
+        success: false,
+        message: 'Task assigned but verification failed'
+      });
+    }
+    
     return res.status(200).json({
       success: true,
       message: `Task assigned successfully to ${assignedUser.name || assignedUser.username}`,
       data: {
-        ...updatedTask._doc,
-        isCompleted: updatedTask.status === 'done'
+        ...populatedTask._doc,
+        isCompleted: populatedTask.status === 'done'
       }
     });
   } catch (error) {
