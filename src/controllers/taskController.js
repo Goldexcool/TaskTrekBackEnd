@@ -847,9 +847,18 @@ const assignTask = async (req, res) => {
       }
     }
     
+    // Check if the task is already assigned to this user
+    if (task.assignedTo && task.assignedTo.toString() === targetUserId.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Task is already assigned to this user'
+      });
+    }
+    
     // Store the previous assignee for logging
     const previousAssignee = task.assignedTo;
     
+    // Always update the assignedTo field with the new user ID
     task.assignedTo = targetUserId;
     task.updatedAt = Date.now();
     await task.save();
@@ -922,15 +931,16 @@ const unassignTask = async (req, res) => {
       });
     }
     
-    // Store who was previously assigned for the activity log
-    const previouslyAssigned = task.assignedTo;
-    
-    if (!previouslyAssigned) {
+    // Check if the task is actually assigned to someone
+    if (!task.assignedTo) {
       return res.status(400).json({
         success: false,
         message: 'Task is already unassigned'
       });
     }
+    
+    // Store who was previously assigned for the activity log
+    const previouslyAssigned = task.assignedTo;
     
     // Find the user who was previously assigned for logging purposes
     let previousUser;
@@ -940,10 +950,19 @@ const unassignTask = async (req, res) => {
       console.error('Error finding previous user:', userError);
     }
     
-    // Update the task
+    // Update the task - explicitly set to null to ensure it's unassigned
     task.assignedTo = null;
     task.updatedAt = Date.now();
     await task.save();
+    
+    // Immediately verify the update was successful
+    const verifiedTask = await Task.findById(id);
+    if (verifiedTask.assignedTo) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to unassign task, please try again'
+      });
+    }
     
     // Log activity
     try {
@@ -957,7 +976,7 @@ const unassignTask = async (req, res) => {
         metadata: {
           taskTitle: task.title,
           previouslyAssigned: previouslyAssigned.toString(),
-          previousUserName: previousUser ? previousUser.name : undefined
+          previousUserName: previousUser ? previousUser.name || previousUser.username : undefined
         }
       });
     } catch (logError) {
@@ -986,7 +1005,8 @@ const unassignTask = async (req, res) => {
       message: 'Task unassigned successfully',
       data: {
         ...updatedTask._doc,
-        isCompleted: updatedTask.status === 'done'
+        isCompleted: updatedTask.status === 'done',
+        assignedTo: null  // Explicitly include null assignedTo in the response
       }
     });
   } catch (error) {
