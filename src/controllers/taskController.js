@@ -6,8 +6,6 @@ const User = require('../models/User');
 const Activity = require('../models/Activity');
 const Notification = require('../models/Notification');
 const mongoose = require('mongoose');
-const axios = require('axios');
-const { getAuthToken } = require('../utils/auth');
 
 /**
  * Check if a user has permission to access a board
@@ -689,68 +687,282 @@ const updateTask = async (req, res) => {
 };
 
 /**
- * Assign a task to a user
- * @param {string} taskId - The ID of the task
- * @param {string|object} userIdentifier - User ID, email, username or user object
- * @returns {Promise} - Promise resolving to updated task
+ * Assign a task to a user - Express route handler
  */
-const assignTask = async (taskId, userIdentifier) => {
+const assignTask = async (req, res) => {
   try {
-    // Prepare payload based on what type of identifier we have
-    let payload = {};
+    const { id } = req.params;
+    const { userId, email, username } = req.body;
     
-    if (typeof userIdentifier === 'object') {
-      // If it's a user object, extract the identifier
-      if (userIdentifier._id) payload.userId = userIdentifier._id;
-      else if (userIdentifier.email) payload.email = userIdentifier.email;
-      else if (userIdentifier.username) payload.username = userIdentifier.username;
-    } else {
-      // If it's a string, assume it's a userId
-      payload.userId = userIdentifier;
+    console.log('Assignment request:', { taskId: id, userId, email, username });
+    
+    // Allow flexible identification of the user to assign
+    if (!userId && !email && !username) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide userId, email, or username to assign the task'
+      });
     }
     
-    const response = await axios.patch(
-      `/api/tasks/${taskId}/assign`,
-      payload,
-      {
-        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+    // First, find the task
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+    
+    let assignedUser = null;
+    
+    // Attempt to find the user through multiple methods
+    if (userId) {
+      if (mongoose.Types.ObjectId.isValid(userId)) {
+        assignedUser = await User.findById(userId);
+      } else {
+        // If not a valid ObjectId, treat as a search term
+        assignedUser = await User.findOne({
+          $or: [
+            { name: { $regex: new RegExp(userId, 'i') } },
+            { username: { $regex: new RegExp(userId, 'i') } },
+            { email: { $regex: new RegExp(userId, 'i') } }
+          ]
+        });
       }
-    );
-    
-    if (response.data.success) {
-      return response.data.data;
-    } else {
-      throw new Error(response.data.message || 'Failed to assign task');
+    } else if (email) {
+      assignedUser = await User.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
+    } else if (username) {
+      assignedUser = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
     }
+    
+    if (!assignedUser) {
+      const searchTerm = userId || email || username;
+      return res.status(404).json({
+        success: false,
+        message: `Could not find user "${searchTerm}"`
+      });
+    }
+    
+    console.log('Found user to assign:', { 
+      userId: assignedUser._id, 
+      name: assignedUser.name || assignedUser.username,
+      email: assignedUser.email 
+    });
+    
+    // Store previous assignment for activity logging
+    const wasAssignedTo = task.assignedTo;
+    let previousUser = null;
+    
+    if (wasAssignedTo) {
+      try {
+        previousUser = await User.findById(wasAssignedTo).select('name username');
+      } catch (err) {
+        console.error('Error finding previous assignee:', err);
+      }
+    }
+    
+    // Update the task
+    task.assignedTo = assignedUser._id;
+    task.updatedAt = new Date();
+    
+    await task.save();
+    
+    // Fetch the fully populated task 
+    const populatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email')
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      });
+      
+    // Log activity
+    try {
+      let actionDescription;
+      
+      if (wasAssignedTo) {
+        actionDescription = `Reassigned task "${task.title}" from ${previousUser ? previousUser.name || previousUser.username : 'someone'} to ${assignedUser.name || assignedUser.username}`;
+      } else {
+        actionDescription = `Assigned task "${task.title}" to ${assignedUser.name || assignedUser.username}`;
+      }
+      
+      await Activity.create({
+        user: req.user.id,
+        action: 'assigned_task',
+        taskId: task._id,
+        boardId: task.board,
+        columnId: task.column,
+        teamId: task.team,
+        description: actionDescription,
+        metadata: {
+          taskTitle: task.title,
+          assignedTo: assignedUser._id,
+          assigneeName: assignedUser.name || assignedUser.username,
+          previouslyAssigned: wasAssignedTo ? wasAssignedTo.toString() : null,
+          previousUserName: previousUser ? previousUser.name || previousUser.username : null
+        }
+      });
+      
+      // Create notification for the assigned user
+      await Notification.create({
+        recipient: assignedUser._id,
+        sender: req.user.id,
+        type: 'task_assigned',
+        relatedTask: task._id,
+        relatedBoard: task.board,
+        message: `You've been assigned to task "${task.title}"`,
+        read: false
+      });
+      
+    } catch (logError) {
+      console.error('Activity or notification logging error:', logError);
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: `Task ${wasAssignedTo ? 'reassigned' : 'assigned'} successfully`,
+      data: {
+        ...populatedTask._doc,
+        isCompleted: populatedTask.status === 'done'
+      }
+    });
   } catch (error) {
-    console.error('Error assigning task:', error);
-    throw error;
+    console.error('Assign task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while assigning task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
 /**
- * Unassign a task
- * @param {string} taskId - The ID of the task
- * @returns {Promise} - Promise resolving to updated task
+ * Unassign a task - Express route handler
  */
-const unassignTask = async (taskId) => {
+const unassignTask = async (req, res) => {
   try {
-    const response = await axios.patch(
-      `/api/tasks/${taskId}/unassign`,
-      {},
-      {
-        headers: { 'Authorization': `Bearer ${getAuthToken()}` }
-      }
-    );
+    const { id } = req.params;
     
-    if (response.data.success) {
-      return response.data.data;
-    } else {
-      throw new Error(response.data.message || 'Failed to unassign task');
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
     }
+    
+    // Check if task is already unassigned
+    if (!task.assignedTo) {
+      return res.status(200).json({
+        success: true,
+        message: 'Task is already unassigned',
+        data: {
+          ...task._doc,
+          isCompleted: task.status === 'done'
+        }
+      });
+    }
+    
+    // Store previous assignment for activity logging
+    const previouslyAssignedId = task.assignedTo ? task.assignedTo.toString() : null;
+    let previousUser = null;
+    
+    if (previouslyAssignedId) {
+      try {
+        previousUser = await User.findById(previouslyAssignedId).select('name username email');
+      } catch (err) {
+        console.error('Error finding previous assignee:', err);
+      }
+    }
+    
+    // Unassign the task
+    task.assignedTo = null;
+    task.updatedAt = new Date();
+    
+    await task.save();
+    
+    // Get the fully populated task
+    const populatedTask = await Task.findById(id)
+      .populate('createdBy', 'name username avatar')
+      .populate('assignedTo', 'name username avatar email') // Will be null
+      .populate('completedBy', 'name username avatar')
+      .populate({
+        path: 'board',
+        select: 'title description'
+      })
+      .populate({
+        path: 'column',
+        select: 'name order'
+      })
+      .populate({
+        path: 'team',
+        select: 'name'
+      });
+    
+    // Log activity
+    if (previousUser) {
+      try {
+        await Activity.create({
+          user: req.user.id,
+          action: 'unassigned_task',
+          taskId: task._id,
+          boardId: task.board,
+          columnId: task.column,
+          teamId: task.team,
+          description: `Unassigned ${previousUser.name || previousUser.username} from task "${task.title}"`,
+          metadata: {
+            taskTitle: task.title,
+            previouslyAssigned: previouslyAssignedId,
+            previousUserName: previousUser.name || previousUser.username || previousUser.email
+          }
+        });
+        
+        // Notify the previously assigned user if different from current user
+        if (previouslyAssignedId !== req.user.id) {
+          await Notification.create({
+            recipient: previouslyAssignedId,
+            sender: req.user.id,
+            type: 'task_unassigned',
+            relatedTask: task._id,
+            relatedBoard: task.board,
+            message: `You've been unassigned from task "${task.title}"`,
+            read: false
+          });
+        }
+      } catch (logError) {
+        console.error('Activity or notification logging error:', logError);
+      }
+    }
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Task unassigned successfully',
+      data: {
+        ...populatedTask._doc,
+        isCompleted: populatedTask.status === 'done',
+        previousAssignee: previousUser ? {
+          id: previousUser._id,
+          name: previousUser.name || previousUser.username,
+          email: previousUser.email
+        } : null
+      }
+    });
   } catch (error) {
-    console.error('Error unassigning task:', error);
-    throw error;
+    console.error('Unassign task error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while unassigning task',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
