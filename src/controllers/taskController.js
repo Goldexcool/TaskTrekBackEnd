@@ -528,19 +528,22 @@ const updateTask = async (req, res) => {
     if (priority !== undefined) task.priority = priority;
     if (dueDate !== undefined) task.dueDate = dueDate;
     if (status !== undefined) {
-      // Map common status values to valid enum values
+      // Map common status values to valid enum values (convert to lowercase for case-insensitive comparison)
       const statusMap = {
         'completed': 'done',
         'complete': 'done',
         'finished': 'done',
+        'done': 'done', 
         'pending': 'todo',
         'in-progress': 'todo',
         'inprogress': 'todo',
-        'in progress': 'todo'
+        'in progress': 'todo',
+        'todo': 'todo' 
       };
 
-      // Use the mapped value if available, otherwise use original (which will fail validation if invalid)
-      task.status = statusMap[status.toLowerCase()] || status;
+      // Use the mapped value if available, otherwise fallback to a default value
+      const statusLower = status.toLowerCase();
+      task.status = statusMap[statusLower] || 'todo';
     }
     
     // Handle assignment/unassignment
