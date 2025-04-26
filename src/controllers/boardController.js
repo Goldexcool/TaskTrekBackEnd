@@ -113,15 +113,33 @@ const getBoards = async (req, res) => {
   }
 };
 
-// Get board by ID
+// Get board by ID - modified for debugging
 const getBoardById = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid board ID format'
+      });
+    }
+
     console.log(`Getting board with ID: ${id} for user ${userId}`);
 
-    const board = await Board.findById(id)
+    // First let's check if the board exists at all
+    const boardExists = await Board.exists({ _id: id });
+    if (!boardExists) {
+      console.log(`Board with ID ${id} does not exist in the database`);
+      return res.status(404).json({
+        success: false,
+        message: 'Board not found in database'
+      });
+    }
+
+    // If board exists, get full details
+    const board = await Board.findOne({ _id: id, deleted: { $ne: true } })
       .populate('createdBy', 'name username avatar')
       .populate('members.user', 'name username avatar email')
       .populate('team', 'name');
@@ -132,6 +150,15 @@ const getBoardById = async (req, res) => {
         message: 'Board not found'
       });
     }
+
+    // Log board and permission details for debugging
+    console.log('BOARD FOUND:', {
+      id: board._id,
+      title: board.title,
+      createdBy: board.createdBy ? board.createdBy._id : 'unknown',
+      team: board.team ? board.team._id : 'none',
+      memberCount: board.members ? board.members.length : 0
+    });
 
     // More permissive check - include creator, direct members, and team members
     const isCreator = board.createdBy && board.createdBy._id.toString() === userId;
@@ -151,6 +178,15 @@ const getBoardById = async (req, res) => {
         })
       );
     }
+
+    // Log permission results
+    console.log('PERMISSION CHECK:', {
+      userId,
+      isCreator,
+      isBoardMember,
+      isTeamMember,
+      hasAccess: isCreator || isBoardMember || isTeamMember
+    });
 
     if (!isCreator && !isBoardMember && !isTeamMember) {
       return res.status(403).json({
