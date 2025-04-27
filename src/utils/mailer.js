@@ -247,7 +247,7 @@ const sendWelcomeEmail = async (user) => {
               </div>
               
               <div style="margin: 35px 0; text-align: center;">
-                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard" style="display: inline-block; padding: 14px 36px; background: #2e5bff; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 500; transition: all 0.2s ease;">Get Started Now</a>
+                <a href="${process.env.FRONTEND_URL || ''}/dashboard" style="display: inline-block; padding: 14px 36px; background: #2e5bff; color: #ffffff; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 500; transition: all 0.2s ease;">Get Started Now</a>
               </div>
               
               <div style="background-color: #f0f7ff; border-radius: 8px; padding: 20px; margin-top: 30px;">
